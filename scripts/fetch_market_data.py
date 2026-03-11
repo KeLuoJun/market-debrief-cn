@@ -54,7 +54,7 @@ def df_to_records(df, max_rows=None):
 
 
 def get_market_overview():
-    """获取市场总貌数据：成交额、涨跌停、换手率等"""
+    """获取市场总貌数据：成交额、涨跌停、换手率等（v2增强版）"""
     df = ak.stock_zh_a_spot_em()
 
     total_stocks = len(df)
@@ -70,11 +70,23 @@ def get_market_overview():
         # 涨跌停需考虑ST和创业板/科创板不同涨跌幅限制
         up_limit = len(df[df['涨跌幅'] >= 9.9])
         down_limit = len(df[df['涨跌幅'] <= -9.9])
+        # v2新增：20cm涨停（创业板/科创板）
+        up_limit_20 = len(df[df['涨跌幅'] >= 19.9])
+        down_limit_20 = len(df[df['涨跌幅'] <= -19.9])
         avg_change = safe_float(df['涨跌幅'].mean())
         median_change = safe_float(df['涨跌幅'].median())
     else:
         up_count = down_count = flat_count = up_limit = down_limit = 0
+        up_limit_20 = down_limit_20 = 0
         avg_change = median_change = 0
+
+    # v2新增：集合竞价偏离估算（开盘价 vs 前收盘价的平均偏离）
+    auction_deviation = 0.0
+    if '开盘' in df.columns and '昨收' in df.columns:
+        valid = df[(df['昨收'] > 0) & (df['开盘'] > 0)]
+        if len(valid) > 0:
+            deviations = (valid['开盘'] - valid['昨收']) / valid['昨收'] * 100
+            auction_deviation = round(safe_float(deviations.mean()), 3)
 
     return {
         "total_stocks": total_stocks,
@@ -87,9 +99,12 @@ def get_market_overview():
         "flat_count": flat_count,
         "up_limit": up_limit,
         "down_limit": down_limit,
+        "up_limit_20cm": up_limit_20,
+        "down_limit_20cm": down_limit_20,
         "limit_ratio": f"{up_limit}:{down_limit}",
         "avg_change_pct": round(avg_change, 2),
         "median_change_pct": round(median_change, 2),
+        "auction_deviation_pct": auction_deviation,
     }
 
 
@@ -263,6 +278,137 @@ def get_stock_fund_flow(stock, market="sh"):
         return []
 
 
+# ====================================================================
+# v2 新增数据获取函数
+# ====================================================================
+
+def get_valuation_data():
+    """v2新增：获取主要指数估值数据（PE/PB/百分位）用于Section 7"""
+    indices = {
+        "000300": "沪深300",
+        "399006": "创业板指",
+        "000688": "科创50",
+        "000905": "中证500",
+    }
+    result = []
+    for code, name in indices.items():
+        entry = {"code": code, "name": name}
+        try:
+            # 尝试获取指数估值历史（不同akshare版本接口可能不同）
+            df = ak.index_value_hist_funddb(
+                symbol=name, indicator="市盈率")
+            if df is not None and not df.empty:
+                latest_pe = safe_float(df.iloc[-1].get('市盈率', 0))
+                # 计算历史百分位
+                all_pe = df['市盈率'].dropna().astype(float)
+                if len(all_pe) > 0 and latest_pe > 0:
+                    percentile = round(
+                        (all_pe < latest_pe).sum() / len(all_pe) * 100)
+                    entry["pe_ttm"] = round(latest_pe, 2)
+                    entry["pe_percentile"] = f"P{percentile}"
+                    entry["pe_avg"] = round(float(all_pe.mean()), 2)
+        except Exception as e:
+            print(f"获取{name}PE估值失败: {e}", file=sys.stderr)
+
+        try:
+            df_pb = ak.index_value_hist_funddb(
+                symbol=name, indicator="市净率")
+            if df_pb is not None and not df_pb.empty:
+                entry["pb"] = round(
+                    safe_float(df_pb.iloc[-1].get('市净率', 0)), 2)
+        except Exception as e:
+            print(f"获取{name}PB估值失败: {e}", file=sys.stderr)
+
+        result.append(entry)
+
+    return result
+
+
+def get_limit_up_ecology(market_df=None):
+    """v2新增：涨停板生态分析（Section 4）
+    从全市场快照计算首板/连板/封板率等"""
+    if market_df is None:
+        try:
+            market_df = ak.stock_zh_a_spot_em()
+        except Exception as e:
+            print(f"获取涨停生态数据失败: {e}", file=sys.stderr)
+            return {}
+
+    if '涨跌幅' not in market_df.columns:
+        return {}
+
+    # 涨停股（包含10cm和20cm）
+    limit_up_stocks = market_df[market_df['涨跌幅'] >= 9.9]
+    total_limit_up = len(limit_up_stocks)
+
+    # 跌停股
+    limit_down_stocks = market_df[market_df['涨跌幅'] <= -9.9]
+
+    # 封板率估算（收盘价 == 最高价 的涨停股比例）
+    sealed_count = 0
+    if total_limit_up > 0 and '最高' in market_df.columns and '收盘' in market_df.columns:
+        sealed = limit_up_stocks[
+            abs(limit_up_stocks['收盘'] - limit_up_stocks['最高']) < 0.01
+        ]
+        sealed_count = len(sealed)
+
+    seal_rate = round(sealed_count / total_limit_up *
+                      100, 1) if total_limit_up > 0 else 0
+
+    return {
+        "total_limit_up": total_limit_up,
+        "total_limit_down": len(limit_down_stocks),
+        "sealed_count": sealed_count,
+        "seal_rate_pct": seal_rate,
+        "limit_up_stocks": df_to_records(limit_up_stocks[[
+            c for c in ['代码', '名称', '涨跌幅', '成交额', '换手率']
+            if c in limit_up_stocks.columns
+        ]], 50) if total_limit_up > 0 else [],
+    }
+
+
+def get_fund_flow_detail():
+    """v2新增：全市场资金流向按订单大小拆分（超大单/大单/中单/小单）
+    用于Section 5"""
+    try:
+        df = ak.stock_market_fund_flow()
+        if df is not None and not df.empty:
+            records = df_to_records(df.tail(5))
+            latest = records[-1] if records else {}
+            return {
+                "latest": latest,
+                "recent_data": records,
+            }
+    except Exception as e:
+        print(f"获取全市场资金流向明细失败: {e}", file=sys.stderr)
+
+    return {"latest": {}, "recent_data": [], "error": "数据获取失败"}
+
+
+def get_bond_yield():
+    """v2新增：获取国债收益率数据，用于Section 7 ERP计算"""
+    try:
+        df = ak.bond_zh_us_rate(start_date="20250101")
+        if df is not None and not df.empty:
+            # 取最近的中国10年期国债收益率
+            records = df_to_records(df.tail(10))
+            latest = records[-1] if records else {}
+            cn_10y = 0
+            for key in ['中国国债收益率10年', '中国10年', 'CN10Y']:
+                if key in latest:
+                    cn_10y = safe_float(latest[key])
+                    break
+            return {
+                "latest": latest,
+                "recent_data": records,
+                "cn_10y_yield": cn_10y,
+            }
+    except Exception as e:
+        print(f"获取国债收益率失败: {e}", file=sys.stderr)
+
+    return {"latest": {}, "recent_data": [], "cn_10y_yield": 0, "error": "数据获取失败"}
+
+
 def get_all_data(args):
     """获取全部市场数据"""
     result = {
@@ -325,6 +471,35 @@ def get_all_data(args):
     except Exception as e:
         print(f"板块资金流向获取失败: {e}", file=sys.stderr)
         result["sector_fund_flow"] = []
+
+    # v2 新增数据采集
+    print("正在获取估值数据...", file=sys.stderr)
+    try:
+        result["valuation_data"] = get_valuation_data()
+    except Exception as e:
+        print(f"估值数据获取失败: {e}", file=sys.stderr)
+        result["valuation_data"] = []
+
+    print("正在分析涨停板生态...", file=sys.stderr)
+    try:
+        result["limit_up_ecology"] = get_limit_up_ecology()
+    except Exception as e:
+        print(f"涨停板生态分析失败: {e}", file=sys.stderr)
+        result["limit_up_ecology"] = {}
+
+    print("正在获取资金流向明细...", file=sys.stderr)
+    try:
+        result["fund_flow_detail"] = get_fund_flow_detail()
+    except Exception as e:
+        print(f"资金流向明细获取失败: {e}", file=sys.stderr)
+        result["fund_flow_detail"] = {}
+
+    print("正在获取国债收益率...", file=sys.stderr)
+    try:
+        result["bond_yield"] = get_bond_yield()
+    except Exception as e:
+        print(f"国债收益率获取失败: {e}", file=sys.stderr)
+        result["bond_yield"] = {}
 
     return result
 
