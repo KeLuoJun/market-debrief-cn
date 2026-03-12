@@ -185,6 +185,11 @@ HTML 设计规范详见 → `references/html-design-spec.md`
 8. **所有数字使用等宽字体**（`SFMono-Regular, Menlo, Consolas`）
 9. **卡片圆角 12-16px**，投影 `0 4px 16px rgba(0,0,0,0.08)`
 10. **必须渲染叙述区块**：每个模块必须包含来自 `analysis_text` 的 `.insight-block` 深度解读段落，禁止只渲染数字表格/图表而省略文字分析。叙述区块 CSS 组件见 `html-design-spec.md「深度叙述区块」`节。
+11. **禁止排版漂移**：顶部仪表盘、图表区、表格区必须使用固定组件容器（`.dashboard-strip`、`.viz-card`、`.table-wrap`、`.chart-frame`），禁止裸露图表直接贴在模块根节点下。
+12. **禁止元素重叠**：仪表盘 gauge、K 线图、Sankey、表格必须有明确高度；若数据不足导致图表拥挤，降级为 stat card / badge / 简化表，不允许文字与图表互相覆盖。
+13. **响应式强制要求**：桌面端按 2-3 列信息栅格布局；当视口 < 900px 时统一降为单列，顶部指数卡改为 2 列网格，禁止 6 个指数横向挤压在一行。
+14. **视觉层次强制要求**：每个模块必须遵循「标题区 → 一句话结论 → 核心图表区 → 深度解读 → 次级表格/清单」的顺序，禁止把图表、长段落、表格随机穿插。
+15. **优先美观而非堆砌**：宁可减少一个次级组件，也要保证主图表和关键数字排版整齐、留白充足、模块高度均衡。
 
 ### 页面结构
 
@@ -225,18 +230,20 @@ HTML 设计规范详见 → `references/html-design-spec.md`
 
 ### 输出文件
 
-将最终 HTML 写入 assets 目录：
+将最终 HTML 写入**项目根目录**：
 
 ```
-assets/market-debrief-YYYY-MM-DD.html
+market-debrief-YYYY-MM-DD.html
 ```
 
-> 每日产出统一存放于 `assets/`：
+> 数据中间产物继续存放于 `assets/`，最终成品 HTML 单独放在项目根目录，便于直接预览、分享和版本比对：
 >
 > - `assets/market_data_YYYY-MM-DD.json` — 原始行情数据
 > - `assets/analysis_YYYY-MM-DD.json` — 量化指标分析结果（新）
 > - `assets/news_data_YYYY-MM-DD.json` — 新闻搜索结果
-> - `assets/market-debrief-YYYY-MM-DD.html` — 最终日报
+> - `market-debrief-YYYY-MM-DD.html` — 最终日报
+
+**输出动作要求**：渲染完成后，必须显式执行“写入项目根目录 HTML 文件”这一步，不允许把最终 HTML 留在 `assets/`、临时目录或对话内联代码块中。
 
 ---
 
@@ -305,6 +312,7 @@ assets/market-debrief-YYYY-MM-DD.html
 | ------------------------------ | ------------------------------------------------- | ---------------- |
 | `scripts/fetch_market_data.py` | AkShare 行情原始数据一键采集 → JSON               | akshare, pandas  |
 | `scripts/analyze_market.py`    | 量化指标计算引擎：情绪/技术/估值/行业/资金 → JSON | numpy, pandas    |
-| `scripts/search_news.sh`       | Tavily 新闻搜索 → JSON                            | jq, curl, Tavily |
+| `scripts/search_news.py`       | Tavily 新闻搜索 → JSON（Windows / 跨平台推荐）    | requests, Tavily |
+| `scripts/search_news.sh`       | Tavily 新闻搜索 → JSON（Linux / macOS）           | jq, curl, Tavily |
 
-依赖安装：`pip install akshare numpy pandas`、`jq` + `curl`（Bash）、Tavily API token（可选）
+依赖安装：`pip install akshare numpy pandas requests`、`jq` + `curl`（Bash，可选）、Tavily API token（可选）

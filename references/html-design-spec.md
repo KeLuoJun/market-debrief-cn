@@ -30,6 +30,18 @@
 - **量化到底**：所有判断必须附数字锚点，禁止使用无数字的形容词
 - **留白即呼吸**：模块间距充足，文字行高宽松，卡片投影轻盈
 
+## 工程化布局约束
+
+> 这是渲染 Agent 的硬约束，不是建议。目标是避免「看起来有设计，但组件互相打架」的成品。
+
+- **先搭骨架再填内容**：先输出页面主栅格、模块容器、图表容器，再写正文与明细表。禁止边写内容边临时拼 CSS。
+- **一个图表一个盒子**：每个 ECharts 容器都必须放在 `.chart-frame` 内，并带固定高度类；禁止把 `style="height:..."` 零散写在多个节点上。
+- **一个模块一个主视觉**：每个模块只允许 1 个主图表 + 1-2 个次级组件。若信息过多，优先删次级组件，不要压缩主图表高度。
+- **表格必须可滚动**：任何超过 4 列或 8 行的表格外层必须包裹 `.table-wrap`，移动端允许横向滚动，禁止压缩到文字重叠。
+- **数字卡统一高度**：顶部指数卡、统计卡、情景卡采用统一最小高度，避免某列内容过长导致参差不齐。
+- **移动端先于桌面端兜底**：当宽度不足时，一律改为单列或双列，不允许继续挤压桌面布局。
+- **无数据时优雅降级**：图表无有效数据时输出 `.empty-state` 提示卡，而不是空白坐标轴或尺寸塌陷的容器。
+
 ---
 
 ## FT 风格色彩系统
@@ -135,21 +147,108 @@ h3 { font-size: 16px; font-weight: 700; margin-top: 24px; margin-bottom: 10px; }
 
 ```css
 html { background: var(--bg-page); }
+* { box-sizing: border-box; }
 body {
-  max-width: 1100px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 48px 40px;
+  padding: 40px 32px 72px;
   background: var(--bg-page);
+}
+
+.page-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
 }
 
 /* 模块卡片 */
 .module {
   background: var(--bg-card);
-  border-radius: 16px;
-  padding: 28px 32px;
-  margin-bottom: 28px;
+  border-radius: 18px;
+  padding: 28px 30px 30px;
   box-shadow: var(--shadow-md);
   border: 1px solid var(--border-light);
+}
+
+.module-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+.module-kicker {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-warning);
+  margin-bottom: 8px;
+}
+
+.module-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.95fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.viz-card,
+.stat-card,
+.note-card {
+  background: linear-gradient(180deg, #fffdf9 0%, #fffaf4 100%);
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  padding: 16px 18px;
+  min-height: 120px;
+}
+
+.chart-frame {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fffdfa 0%, #f8f2ea 100%);
+  border: 1px solid var(--border-light);
+  padding: 10px;
+}
+
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+}
+
+.table-wrap table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.empty-state {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: repeating-linear-gradient(
+    -45deg,
+    #fbf6ef,
+    #fbf6ef 12px,
+    #f6efe6 12px,
+    #f6efe6 24px
+  );
+  border: 1px dashed var(--border-medium);
+  border-radius: 12px;
 }
 
 /* 模块内分区 */
@@ -167,8 +266,14 @@ body {
 .four-col { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 
 @media (max-width: 768px) {
-  body { padding: 16px; }
-  .two-col, .three-col, .four-col { grid-template-columns: 1fr 1fr; }
+  body { padding: 16px 14px 40px; }
+  .module { padding: 20px 18px 22px; border-radius: 16px; }
+  .module-header,
+  .viz-grid,
+  .two-col,
+  .three-col,
+  .four-col { grid-template-columns: 1fr; }
+  .module-meta { text-align: left; }
 }
 ```
 
@@ -189,7 +294,7 @@ body {
 
 ## 顶部仪表盘横条
 
-深色 espresso 底，三行布局：指数行 → 市场概览行 → 今日定性。
+深色 espresso 底，三行布局：品牌行 → 指数卡网格 → 市场概览卡。禁止使用简单横向一排把 6 个指数强行压缩在一起。
 
 ```html
 <header class="dashboard-strip">
@@ -246,15 +351,18 @@ body {
 .dashboard-strip {
   background: linear-gradient(135deg, var(--bg-header) 0%, #2C1810 100%);
   color: var(--text-on-dark);
-  padding: 28px 36px;
-  border-radius: 18px;
+  padding: 30px 30px 24px;
+  border-radius: 22px;
   margin-bottom: 36px;
   box-shadow: var(--shadow-lg);
 }
 
 /* 顶行 */
 .dashboard-top {
-  display: flex; justify-content: space-between; align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: start;
   margin-bottom: 20px;
   padding-bottom: 16px;
   border-bottom: 1px solid rgba(250,247,242,0.15);
@@ -268,28 +376,44 @@ body {
 
 /* 指数行 */
 .index-row {
-  display: flex; gap: 0; margin-bottom: 20px;
-  overflow-x: auto;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
 }
 .index-card {
-  flex: 1; min-width: 130px; padding: 10px 16px;
-  border-right: 1px solid rgba(250,247,242,0.12);
-  text-align: center;
+  min-height: 96px;
+  padding: 14px 12px 12px;
+  text-align: left;
+  border: 1px solid rgba(250,247,242,0.1);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.04);
 }
-.index-card:last-child { border-right: none; }
 .idx-name { display: block; font-size: 11px; color: var(--text-on-dark-secondary); margin-bottom: 4px; }
-.idx-val { display: block; font-size: 22px; font-weight: 700; }
+.idx-val { display: block; font-size: 24px; font-weight: 700; line-height: 1.15; }
 .idx-chg { display: block; font-size: 13px; margin-top: 2px; }
 .idx-chg.up { color: #E05555; }
 .idx-chg.down { color: #6BA3BE; }
 
 /* 概览行 */
 .dashboard-stats {
-  display: flex; gap: 32px; flex-wrap: wrap; align-items: center;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
 }
-.stat-item { display: flex; align-items: center; gap: 6px; }
+.stat-item {
+  min-height: 88px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(250,247,242,0.08);
+}
 .stat-label { font-size: 11px; color: var(--text-on-dark-secondary); }
-.stat-value { font-size: 15px; font-weight: 700; }
+.stat-value { font-size: 20px; font-weight: 700; }
 .stat-sub { font-size: 11px; color: var(--text-on-dark-secondary); }
 
 /* 温度条 */
@@ -301,6 +425,13 @@ body {
 .thermo-fill {
   height: 100%; border-radius: 3px;
   background: linear-gradient(90deg, #2471A3, #D68910, #C0392B);
+}
+
+@media (max-width: 900px) {
+  .dashboard-top,
+  .dashboard-stats { grid-template-columns: 1fr; }
+  .index-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-headline { max-width: none; text-align: left; }
 }
 ```
 
@@ -335,6 +466,12 @@ function tip(fmt) { return {trigger:'axis',backgroundColor:C.TOOLTIP_BG,borderCo
 .chart-mini  { width: 100%; height: 200px; } /* 迷你趋势图 */
 .chart-gauge { height: 220px; }              /* 情绪仪表盘 */
 ```
+
+**布局兜底规则**：
+- gauge 容器最小宽度 260px；若双列宽度不足，改为纵向堆叠，不允许指针、刻度和数字重叠。
+- K 线图与 Sankey 图必须单独占据一整行 `.viz-card`，禁止与表格或长文本并排。
+- 表格上方必须留出标题或说明，避免图表和表格首行直接相撞。
+- 若任一模块的数据缺失超过 50%，该模块主视觉降级为 stat card + insight-block + empty-state，不强行渲染复杂图表。
 
 **通用图表样式增强**：
 - 所有 axis 的 axisLine、splitLine 使用 `#E6DDD4`（与卡片底色协调）
