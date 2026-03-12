@@ -45,7 +45,8 @@ except ImportError:
 
 # 申万一级行业：成长/价值分类（经验聚类）
 GROWTH_SECTORS = {"电子", "计算机", "通信", "国防军工", "医药生物", "电力设备", "新能源"}
-VALUE_SECTORS = {"银行", "非银金融", "房地产", "建筑装饰", "公用事业", "交通运输", "采掘", "钢铁", "建筑材料"}
+VALUE_SECTORS = {"银行", "非银金融", "房地产", "建筑装饰",
+                 "公用事业", "交通运输", "采掘", "钢铁", "建筑材料"}
 
 # 整数关口（用于识别心理关口压力位/支撑位）
 ROUND_LEVELS = {
@@ -56,6 +57,7 @@ ROUND_LEVELS = {
 }
 
 # ── 工具函数 ──────────────────────────────────────────────────
+
 
 def load_json(path: Path) -> dict:
     with open(path, encoding="utf-8") as f:
@@ -104,7 +106,8 @@ def calc_sentiment(data: dict) -> dict:
     if not mff.empty and "成交额" in mff.columns:
         turnover = mff["成交额"].astype(float)
         latest_turn = turnover.iloc[-1]
-        ma20_turn = turnover.tail(21).iloc[:-1].mean() if len(turnover) > 20 else turnover.mean()
+        ma20_turn = turnover.tail(
+            21).iloc[:-1].mean() if len(turnover) > 20 else turnover.mean()
         ratio_turn = latest_turn / ma20_turn if ma20_turn > 0 else 1.0
         vol_score = linear_score(ratio_turn, 0.5, 1.5)
         result["turnover_latest"] = round(float(latest_turn), 2)
@@ -148,17 +151,21 @@ def calc_sentiment(data: dict) -> dict:
             frames.append(to_df(channel_data))
         if frames:
             nb_all = pd.concat(frames)
-            net_col = next((c for c in nb_all.columns if "净买入" in c or "净额" in c), None)
+            net_col = next(
+                (c for c in nb_all.columns if "净买入" in c or "净额" in c), None)
             if net_col:
-                nb_all[net_col] = pd.to_numeric(nb_all[net_col], errors="coerce")
-                nb_net_today = float(nb_all.tail(2).groupby(nb_all.tail(2).columns[0])[net_col].sum().iloc[-1]) if len(nb_all) > 1 else 0.0
+                nb_all[net_col] = pd.to_numeric(
+                    nb_all[net_col], errors="coerce")
+                nb_net_today = float(nb_all.tail(2).groupby(nb_all.tail(2).columns[0])[
+                                     net_col].sum().iloc[-1]) if len(nb_all) > 1 else 0.0
                 nb_score = linear_score(nb_net_today / 1e8, -50, 50)
 
     # -- 超大单净流方向（权重 10%）
     super_score = 50.0
     super_net = 0.0
     if not mff.empty:
-        sf_col = next((c for c in mff.columns if "超大单" in c and "净" in c), None)
+        sf_col = next(
+            (c for c in mff.columns if "超大单" in c and "净" in c), None)
         if sf_col:
             sv = mff[sf_col].astype(float)
             super_net = float(sv.iloc[-1])
@@ -180,7 +187,8 @@ def calc_sentiment(data: dict) -> dict:
     composite = round(composite, 1)
 
     # -- 散户分 / 机构分
-    retail_score = round((zt_dt_score * 0.33 + seal_score * 0.33 + margin_score * 0.34), 1)
+    retail_score = round(
+        (zt_dt_score * 0.33 + seal_score * 0.33 + margin_score * 0.34), 1)
     inst_score = round((nb_score * 0.5 + super_score * 0.5), 1)
 
     divergence = _classify_divergence(retail_score, inst_score)
@@ -244,7 +252,8 @@ def calc_technical(data: dict) -> dict:
         high = df["high"].astype(float) if "high" in df.columns else close
         low = df["low"].astype(float) if "low" in df.columns else close
         open_ = df["open"].astype(float) if "open" in df.columns else close
-        volume = df["volume"].astype(float) if "volume" in df.columns else pd.Series([1.0] * len(df))
+        volume = df["volume"].astype(
+            float) if "volume" in df.columns else pd.Series([1.0] * len(df))
 
         latest_close = float(close.iloc[-1])
         latest_open = float(open_.iloc[-1])
@@ -254,14 +263,16 @@ def calc_technical(data: dict) -> dict:
         ma = {}
         for n in [5, 10, 20, 60, 120, 250]:
             if len(close) >= n:
-                ma[f"ma{n}"] = round(float(close.tail(n + 1).iloc[:-1].mean()), 2)
+                ma[f"ma{n}"] = round(
+                    float(close.tail(n + 1).iloc[:-1].mean()), 2)
 
         # MA 偏离度
         deviation = {}
         for n in [5, 20, 60, 250]:
             key = f"ma{n}"
             if key in ma and ma[key] > 0:
-                deviation[f"ma{n}_dev_pct"] = round((latest_close - ma[key]) / ma[key] * 100, 2)
+                deviation[f"ma{n}_dev_pct"] = round(
+                    (latest_close - ma[key]) / ma[key] * 100, 2)
 
         # 均线排列判断
         arrangement = _judge_ma_arrangement(latest_close, ma)
@@ -270,7 +281,8 @@ def calc_technical(data: dict) -> dict:
         vol_ratio = 1.0
         if len(volume) >= 6:
             avg5 = float(volume.tail(6).iloc[:-1].mean())
-            vol_ratio = round(float(volume.iloc[-1]) / avg5, 2) if avg5 > 0 else 1.0
+            vol_ratio = round(
+                float(volume.iloc[-1]) / avg5, 2) if avg5 > 0 else 1.0
 
         # K线形态识别
         kline_pattern = _identify_kline_pattern(
@@ -280,7 +292,8 @@ def calc_technical(data: dict) -> dict:
 
         # 日内/隔夜涨幅拆解
         overnight_chg = round((latest_open - prev_close) / prev_close * 100, 2)
-        intraday_chg = round((latest_close - latest_open) / latest_open * 100, 2)
+        intraday_chg = round(
+            (latest_close - latest_open) / latest_open * 100, 2)
         total_chg = round((latest_close - prev_close) / prev_close * 100, 2)
 
         # 支撑/压力位
@@ -409,8 +422,10 @@ def _calc_key_levels(close, high, low, volume, latest_close, ma, index_name):
         swings = period_high - period_low
         for ratio, label in [(0.382, "Fib38.2%"), (0.500, "Fib50.0%"), (0.618, "Fib61.8%")]:
             fib_level = round(period_high - swings * ratio, 2)
-            dist_pct = round((fib_level - latest_close) / latest_close * 100, 2)
-            entry = {"level": fib_level, "type": label, "distance_pct": dist_pct}
+            dist_pct = round((fib_level - latest_close) /
+                             latest_close * 100, 2)
+            entry = {"level": fib_level, "type": label,
+                     "distance_pct": dist_pct}
             if fib_level < latest_close:
                 supports.append(entry)
             else:
@@ -421,10 +436,12 @@ def _calc_key_levels(close, high, low, volume, latest_close, ma, index_name):
     if n30 >= 5:
         c30 = close.tail(n30).values.astype(float)
         v30 = volume.tail(n30).values.astype(float)
-        vwap_val = round(float(np.average(c30, weights=v30)), 2) if v30.sum() > 0 else None
+        vwap_val = round(float(np.average(c30, weights=v30)),
+                         2) if v30.sum() > 0 else None
         if vwap_val:
             dist_pct = round((vwap_val - latest_close) / latest_close * 100, 2)
-            entry = {"level": vwap_val, "type": "VWAP30日", "distance_pct": dist_pct}
+            entry = {"level": vwap_val, "type": "VWAP30日",
+                     "distance_pct": dist_pct}
             if vwap_val < latest_close:
                 supports.append(entry)
             else:
@@ -472,7 +489,8 @@ def calc_valuation(data: dict) -> dict:
                 except (TypeError, ValueError):
                     pass
         if pe_col in recent.columns and current_pe is not None:
-            pe_pct = round(percentile_rank(recent[pe_col].astype(float), current_pe) * 100, 1)
+            pe_pct = round(percentile_rank(
+                recent[pe_col].astype(float), current_pe) * 100, 1)
         pe_result[idx_name] = {
             "current_pe": current_pe,
             "pe_percentile_60d": pe_pct,
@@ -502,7 +520,8 @@ def calc_valuation(data: dict) -> dict:
         yield_col = next((c for c in bond.columns if "10年" in c), None)
         if yield_col:
             bond[yield_col] = pd.to_numeric(bond[yield_col], errors="coerce")
-            bond_yield_latest = float(bond[yield_col].dropna().iloc[-1]) / 100  # 转为小数
+            bond_yield_latest = float(
+                bond[yield_col].dropna().iloc[-1]) / 100  # 转为小数
             earnings_yield = 1.0 / hs300_pe
             erp = round((earnings_yield - bond_yield_latest) * 100, 3)  # 百分比
             # 历史 ERP 近似（用近60条）
@@ -510,8 +529,10 @@ def calc_valuation(data: dict) -> dict:
                 to_df(pe_data.get("沪深300", {}).get("recent_60", []))
                 .get("滚动市盈率", pd.Series(dtype=float)), errors="coerce"
             ).dropna() - bond_yield_latest) * 100
-            erp_mean = round(float(erp_history.mean()), 3) if len(erp_history) > 5 else None
-            erp_std = round(float(erp_history.std()), 3) if len(erp_history) > 5 else None
+            erp_mean = round(float(erp_history.mean()), 3) if len(
+                erp_history) > 5 else None
+            erp_std = round(float(erp_history.std()), 3) if len(
+                erp_history) > 5 else None
             erp_signal = _erp_signal(erp, erp_mean, erp_std)
             erp_result = {
                 "erp_pct": erp,
@@ -563,7 +584,8 @@ def calc_industry(data: dict) -> dict:
 
     # 寻找涨跌幅列
     chg_col = next((c for c in board.columns if "涨跌幅" in c), None)
-    name_col = next((c for c in board.columns if "板块名称" in c or "行业" in c or "名称" in c), None)
+    name_col = next(
+        (c for c in board.columns if "板块名称" in c or "行业" in c or "名称" in c), None)
     if not chg_col or not name_col:
         return result
 
@@ -573,7 +595,7 @@ def calc_industry(data: dict) -> dict:
     # 四分类
     heatmap = {
         "strong": [],   # ≥ +2%
-        "moderate": [], # +0.5% ~ +2%
+        "moderate": [],  # +0.5% ~ +2%
         "neutral": [],  # -0.5% ~ +0.5%
         "weak": [],     # ≤ -0.5%
     }
@@ -603,9 +625,12 @@ def calc_industry(data: dict) -> dict:
                    if any(g in r["name"] for g in GROWTH_SECTORS)]
     value_chgs = [r["chg_pct"] for r in heatmap["strong"] + heatmap["moderate"] + heatmap["neutral"] + heatmap["weak"]
                   if any(v in r["name"] for v in VALUE_SECTORS)]
-    growth_avg = round(sum(growth_chgs) / len(growth_chgs), 2) if growth_chgs else None
-    value_avg = round(sum(value_chgs) / len(value_chgs), 2) if value_chgs else None
-    style_spread = round(growth_avg - value_avg, 2) if (growth_avg is not None and value_avg is not None) else None
+    growth_avg = round(sum(growth_chgs) / len(growth_chgs),
+                       2) if growth_chgs else None
+    value_avg = round(sum(value_chgs) / len(value_chgs),
+                      2) if value_chgs else None
+    style_spread = round(growth_avg - value_avg,
+                         2) if (growth_avg is not None and value_avg is not None) else None
     if style_spread is not None:
         if style_spread > 1.0:
             style_dominant = "成长占优"
@@ -625,13 +650,18 @@ def calc_industry(data: dict) -> dict:
 
     # 行业资金流向 TOP/BOTTOM
     if not sector_flow.empty:
-        net_col = next((c for c in sector_flow.columns if "净额" in c or "净流入" in c), None)
-        sf_name_col = next((c for c in sector_flow.columns if "板块" in c or "行业" in c or "名称" in c), None)
+        net_col = next(
+            (c for c in sector_flow.columns if "净额" in c or "净流入" in c), None)
+        sf_name_col = next(
+            (c for c in sector_flow.columns if "板块" in c or "行业" in c or "名称" in c), None)
         if net_col and sf_name_col:
-            sector_flow[net_col] = pd.to_numeric(sector_flow[net_col], errors="coerce")
+            sector_flow[net_col] = pd.to_numeric(
+                sector_flow[net_col], errors="coerce")
             sector_flow = sector_flow.dropna(subset=[net_col])
-            top3_in = sector_flow.nlargest(3, net_col)[[sf_name_col, net_col]].to_dict("records")
-            top3_out = sector_flow.nsmallest(3, net_col)[[sf_name_col, net_col]].to_dict("records")
+            top3_in = sector_flow.nlargest(
+                3, net_col)[[sf_name_col, net_col]].to_dict("records")
+            top3_out = sector_flow.nsmallest(
+                3, net_col)[[sf_name_col, net_col]].to_dict("records")
             result["fund_flow_top3_inflow"] = [
                 {"name": str(r[sf_name_col]), "net_yi": round(float(r[net_col]) / 1e8, 2)} for r in top3_in
             ]
@@ -684,13 +714,16 @@ def calc_limit_up_ecology(data: dict) -> dict:
     seal_rate = round(zt_count / max(zt_count + broken_count, 1) * 100, 1)
 
     # 连板分布（从强势连板数据中统计）
-    consecutive_dist = {"first_board": 0, "2_board": 0, "3_board": 0, "4plus_board": 0}
+    consecutive_dist = {"first_board": 0,
+                        "2_board": 0, "3_board": 0, "4plus_board": 0}
     max_consecutive = 1
     highest_stock = ""
     if not strong.empty:
         # 寻找连板数列
-        cont_col = next((c for c in strong.columns if "连板" in c or "天数" in c), None)
-        name_col = next((c for c in strong.columns if "名称" in c or "股票名" in c), None)
+        cont_col = next(
+            (c for c in strong.columns if "连板" in c or "天数" in c), None)
+        name_col = next(
+            (c for c in strong.columns if "名称" in c or "股票名" in c), None)
         if cont_col and name_col:
             strong[cont_col] = pd.to_numeric(strong[cont_col], errors="coerce")
             for _, row in strong.dropna(subset=[cont_col]).iterrows():
@@ -709,7 +742,8 @@ def calc_limit_up_ecology(data: dict) -> dict:
                         pass
 
     # 首板估算（总涨停 - 连板）
-    multi_board = consecutive_dist["2_board"] + consecutive_dist["3_board"] + consecutive_dist["4plus_board"]
+    multi_board = consecutive_dist["2_board"] + \
+        consecutive_dist["3_board"] + consecutive_dist["4plus_board"]
     consecutive_dist["first_board"] = max(zt_count - multi_board, 0)
 
     # 主题集中度（基于涨停池的概念/行业）
@@ -718,7 +752,8 @@ def calc_limit_up_ecology(data: dict) -> dict:
         theme_col = next((k for k in (zt_stocks[0].keys() if zt_stocks else [])
                           if "题材" in k or "概念" in k or "行业" in k), None)
         if theme_col:
-            themes = [str(s.get(theme_col, "")) for s in zt_stocks if s.get(theme_col)]
+            themes = [str(s.get(theme_col, ""))
+                      for s in zt_stocks if s.get(theme_col)]
             if themes:
                 from collections import Counter
                 top_theme, top_count = Counter(themes).most_common(1)[0]
@@ -837,7 +872,8 @@ def calc_northbound(data: dict) -> dict:
     for ch, records in nb.items():
         df = to_df(records)
         if not df.empty:
-            net_col = next((c for c in df.columns if "净买入" in c or "净额" in c), None)
+            net_col = next(
+                (c for c in df.columns if "净买入" in c or "净额" in c), None)
             if net_col:
                 df["channel"] = ch
                 df["net"] = pd.to_numeric(df[net_col], errors="coerce")
@@ -851,7 +887,8 @@ def calc_northbound(data: dict) -> dict:
     daily_net = daily_net.tail(22)  # 取最近22个交易日
 
     net_today = round(float(daily_net["net"].iloc[-1]) / 1e8, 2)
-    net_20d = [round(float(x) / 1e8, 2) for x in daily_net["net"].tail(20).tolist()]
+    net_20d = [round(float(x) / 1e8, 2)
+               for x in daily_net["net"].tail(20).tolist()]
     cum_20d = round(sum(net_20d), 2)
 
     # 趋势描述
@@ -956,7 +993,8 @@ def main():
     parser = argparse.ArgumentParser(description="A股日报量化分析引擎")
     parser.add_argument("--date", help="目标日期 YYYYMMDD，自动匹配 assets/ 中的数据文件")
     parser.add_argument("--input", "-i", help="直接指定 market_data JSON 文件路径")
-    parser.add_argument("--output", "-o", help="输出文件路径（默认 assets/analysis_YYYY-MM-DD.json）")
+    parser.add_argument(
+        "--output", "-o", help="输出文件路径（默认 assets/analysis_YYYY-MM-DD.json）")
     args = parser.parse_args()
 
     # 确定输入文件
@@ -970,7 +1008,8 @@ def main():
         # 自动寻找 assets/ 中最新的 market_data 文件
         candidates = sorted(Path("assets").glob("market_data_*.json"))
         if not candidates:
-            print("错误: 未找到 assets/market_data_*.json 文件，请先运行 fetch_market_data.py", file=sys.stderr)
+            print(
+                "错误: 未找到 assets/market_data_*.json 文件，请先运行 fetch_market_data.py", file=sys.stderr)
             sys.exit(1)
         input_path = candidates[-1]
         print(f"[INFO] 自动选择最新数据文件: {input_path}", file=sys.stderr)

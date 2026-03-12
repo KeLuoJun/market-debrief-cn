@@ -416,6 +416,11 @@ ERP = 沪深300股息率 - 10年期国债收益率
     "overnight_summary": {
       "us_stocks": "", "hk_stocks": "", "commodities": "",
       "transmission_judgment": ""
+    },
+    "analysis_text": {
+      "headline": "用一句话说明今日市场定价的核心逻辑（≤30字，结论优先）",
+      "event_interpretation": "从 tavily 新闻中取2-3条有效事件，每条写2-3句：新闻内容 → 为何影响今日盘面 → 定价是否充分。必须引用具体板块涨跌幅%与事件逻辑挂钩。",
+      "macro_judgment": "基于三维坐标综合判断当前宏观背景对市场的含义（50-80字，结论式语言）"
     }
   },
   "module2": {
@@ -425,7 +430,11 @@ ERP = 沪深300股息率 - 10年期国债收益率
     "institutional_score": 0,
     "divergence_type": "",
     "trend_5d": [],
-    "risk_zone": false
+    "risk_zone": false,
+    "analysis_text": {
+      "emotion_portrait": "情绪全景深度描述：综合分处于什么历史水位，散户和机构各在做什么动作，这种分歧背后的资金行为逻辑是什么。不是罗列指标，而是推断参与者动机（80-120字）",
+      "trend_insight": "5日趋势的斜率判断：加速/高位走平/拐头/筑底，并说明下一个变化节点的观测信号（30-50字）"
+    }
   }
 }
 ```
@@ -457,7 +466,9 @@ ERP = 沪深300股息率 - 10年期国债收益率
         "driver": "",
         "rotation_stage": "",
         "capital_source": "",
-        "sustainability": ""
+        "sustainability": "",
+        "leading_stocks": "",
+        "deep_analysis": "对该板块上涨的深度解读：驱动因素真实性、与新闻催化剂的关系、龙头股资金意图、持续性判断依据（60-100字）"
       }
     ],
     "limit_up_ecology": {
@@ -465,6 +476,10 @@ ERP = 沪深300股息率 - 10年期国债收益率
       "seal_rate": 0, "broken_count": 0,
       "theme_concentration": 0,
       "profit_effect": ""
+    },
+    "analysis_text": {
+      "sector_narrative": "今日板块轮动的深度解读：为什么这些板块在涨/跌，资金从哪来到哪去背后的逻辑，是风险规避还是进攻性轮动，结合新闻催化剂说明（100-150字）",
+      "ecology_insight": "涨停板生态对当前市场赚钱效应的含义，连板高度说明什么，封板率意味着什么操作信号（40-60字）"
     }
   },
   "module4": {
@@ -476,7 +491,11 @@ ERP = 沪深300股息率 - 10年期国债收益率
       "outflow_top3": [], "inflow_top3": [],
       "migration_type": ""
     },
-    "lhb_interpretation": []
+    "lhb_interpretation": [],
+    "analysis_text": {
+      "fund_behavior_insight": "资金行为的深度解读：机构在做什么、散户在做什么、这种对手盘格局历史上通常意味着什么（不要只说'机构减仓散户接盘'，要推断动机和后续含义，80-120字）",
+      "migration_narrative": "资金迁移路线的含义：钱从哪个方向流到哪个方向说明市场在定价什么主题或风险偏好变化（40-60字）"
+    }
   }
 }
 ```
@@ -512,20 +531,56 @@ ERP = 沪深300股息率 - 10年期国债收益率
     },
     "volume_price": {"type": "", "overnight_change": 0, "intraday_change": 0, "interpretation": ""},
     "valuation_table": {},
-    "erp": {"current": 0, "historical_mean": 0, "judgment": ""}
+    "erp": {"current": 0, "historical_mean": 0, "judgment": ""},
+    "analysis_text": {
+      "technical_narrative": "技术形态深度解读：K线说明什么（量价配合信息），均线排列处于什么阶段，支撑/压力位对当前位置的操作含义（60-100字，不罗列数字，侧重解读）",
+      "valuation_insight": "估值信号说明什么：PE百分位+ERP共同指向什么配置意义，与历史上类似估值水位时市场的表现做对比（50-80字）"
+    }
   },
   "module6": {
     "three_scenarios": {
-      "core": {"probability": 0, "description": "", "index_range": "", "triggers": []},
-      "bullish": {"probability": 0, "description": "", "index_range": "", "triggers": []},
-      "bearish": {"probability": 0, "description": "", "index_range": "", "triggers": []}
+      "core": {"probability": 0, "description": "", "index_range": "", "triggers": [], "rationale": "核心情景推导逻辑：技术+情绪+事件三方面依据各一条（40-60字）"},
+      "bullish": {"probability": 0, "description": "", "index_range": "", "triggers": [], "rationale": "乐观情景推导逻辑（30-50字）"},
+      "bearish": {"probability": 0, "description": "", "index_range": "", "triggers": [], "rationale": "悲观情景推导逻辑（30-50字）"}
     },
     "watch_list": [],
     "historical_mirror": {
       "period": "", "similarities": [], "differences": [],
-      "subsequent_returns": {"5d": 0, "10d": 0, "20d": 0}
+      "subsequent_returns": {"5d": 0, "10d": 0, "20d": 0},
+      "mirror_insight": "历史镜像对当前的参考价值：类比可信度如何，关键差异如何影响结论（30-50字）"
     },
     "previous_review": null
   }
 }
 ```
+
+---
+
+## 叙述性分析写作规范
+
+> 每个 `analysis_text` 字段是报告最重要的内核——数字提供锚点，叙述提供洞察。
+
+### 核心写作原则
+
+1. **双源必用**：每段叙述必须同时引用 akshare 量化数据（数字）和 tavily 新闻事件（原因），两者结合才构成完整分析。禁止只引用数字而不解释背后的新闻/事件驱动；同样禁止只引用新闻而无盘面数据印证。
+
+2. **推断动机，不只描述现象**：
+   - ❌「机构净流出720亿，散户净流入584亿」（只是描述）
+   - ✅「机构在美联储政策转向预期动摇的背景下集中撤退，而散户抄底意愿强烈——这种对手盘格局通常预示短期底部附近，但历史上散户单边接盘后行情往往还需1-2周消化」（推断动机+历史含义）
+
+3. **精简不等于简单**：字数限制是上限，不是目标。80字的段落如果能准确传达深度判断就够了，不需要为了填字数而堆砌形容词。
+
+4. **结论前置**：每段分析的第一句必须是结论，后面才是支撑。
+
+5. **不重复标题**：`analysis_text` 的内容不能只是模块标题的展开，必须补充标题中没有的信息（原因、历史对比、操作含义）。
+
+### 各字段深度要求
+
+| 字段 | 深度要求 | 禁止写法 |
+|------|---------|---------|
+| `module1.event_interpretation` | 每条新闻必须与板块涨跌幅挂钩，判断定价完成度 | 「煤炭大涨，因为供给紧张」（无定价判断） |
+| `module2.emotion_portrait` | 推断散户/机构的实际操作动机，不只说他们情绪如何 | 「散户情绪偏高，应注意风险」（无动机推断） |
+| `module3.sector_narrative` | 说明轮动方向背后的宏观逻辑（风险偏好变化）+ 新闻催化剂 | 「煤炭板块资金流入，概念受追捧」（无逻辑链） |
+| `module4.fund_behavior_insight` | 用历史类比说明这种资金格局通常意味着什么 | 「主力资金净流出，市场有压力」（无历史参考） |
+| `module5.technical_narrative` | 解读量价配合信号的操作含义（买/卖/观望） | 「均线处于多头排列，技术面向好」（无操作含义） |
+| `module6.three_scenarios.*.rationale` | 三个依据来自三个不同维度（技术/情绪/事件） | 「基于以上分析，该情景概率为X%」（无具体依据） |

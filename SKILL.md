@@ -48,19 +48,23 @@ python scripts/fetch_market_data.py --date YYYYMMDD
 
 ### Step 3: 搜索新闻事件
 
-使用 Tavily 搜索当日关键事件。在 bash 环境下运行：
+使用 Tavily 搜索当日关键事件，自动执行 4 组查询，覆盖：A股政策新闻、板块热点、隔夜外盘、宏观经济数据。
+
+**Windows（推荐，跨平台）**：
+
+```bash
+python scripts/search_news.py --date YYYY-MM-DD
+```
+
+**Linux / macOS**：
 
 ```bash
 bash scripts/search_news.sh '{"date": "YYYY-MM-DD"}'
 ```
 
-脚本自动执行 4 组搜索查询，覆盖：A股政策新闻、板块热点、隔夜外盘、宏观经济数据。
+两个脚本输出格式完全相同，**自动写入** `assets/news_data_YYYY-MM-DD.json`，失败的查询记录在 `_failed_queries` 字段。
 
-脚本**自动写入** `assets/news_data_YYYY-MM-DD.json`，失败的查询记录在 `_failed_queries` 字段。
-
-⚠️ 需要 Tavily API token（自动从 MCP 缓存获取，或设置 `TAVILY_API_KEY` 环境变量）。
-
-> 若无法使用 Tavily，可跳过新闻采集——Subagent A 将仅基于量化数据分析，不做事件归因。
+⚠️ 需要 Tavily API token。优先级：`TAVILY_API_KEY` 环境变量（支持 `tvly-...` 格式）→ `~/.mcp-auth/` JWT 缓存。若两者均不可用，脚本会报错退出——必须先解决认证问题再继续（见 Step 4 双源要求）。
 
 ### Step 3.5: 运行量化分析引擎（新增）
 
@@ -72,23 +76,25 @@ python scripts/analyze_market.py --date YYYYMMDD
 
 脚本**自动写入** `assets/analysis_YYYY-MM-DD.json`，包含：
 
-| 模块 | 预计算内容 |
-|------|-----------|
-| 情绪评分 | 综合分（0-100）、散户/机构拆解分、各分项得分、60日成交额百分位 |
-| 技术矩阵 | 6指数 MA5/10/20/60/120/250 值及偏离度、均线排列判断、量比、K线形态识别 |
-| 支撑/压力位 | MA位/斐波那契38.2%/50%/61.8%/VWAP30日/整数关口，距当前价%标注 |
-| 涨跌拆解 | 隔夜涨幅=开盘/前收-1（反映消息面）、日内涨幅=收盘/开盘-1（反映盘中行为） |
-| 行业分析 | 四分类强弱表、成长/价值均涨幅差、资金净流入 TOP3/BOTTOM3 行业 |
-| 涨停生态 | 封板率、连板分布、最高连板数+名称、主题集中度、赚钱效应评级 |
-| 资金结构 | 超大/大/中/小单净流入（亿元）、机构/散户行为类型判断、资金迁移类型 |
-| 估值 & ERP | 各指数 PE 历史百分位、全A PB、ERP%（含60日均值/标准差/信号） |
-| 北向资金 | 当日净额、20日序列、20日累计、趋势描述 |
+| 模块        | 预计算内容                                                               |
+| ----------- | ------------------------------------------------------------------------ |
+| 情绪评分    | 综合分（0-100）、散户/机构拆解分、各分项得分、60日成交额百分位           |
+| 技术矩阵    | 6指数 MA5/10/20/60/120/250 值及偏离度、均线排列判断、量比、K线形态识别   |
+| 支撑/压力位 | MA位/斐波那契38.2%/50%/61.8%/VWAP30日/整数关口，距当前价%标注            |
+| 涨跌拆解    | 隔夜涨幅=开盘/前收-1（反映消息面）、日内涨幅=收盘/开盘-1（反映盘中行为） |
+| 行业分析    | 四分类强弱表、成长/价值均涨幅差、资金净流入 TOP3/BOTTOM3 行业            |
+| 涨停生态    | 封板率、连板分布、最高连板数+名称、主题集中度、赚钱效应评级              |
+| 资金结构    | 超大/大/中/小单净流入（亿元）、机构/散户行为类型判断、资金迁移类型       |
+| 估值 & ERP  | 各指数 PE 历史百分位、全A PB、ERP%（含60日均值/标准差/信号）             |
+| 北向资金    | 当日净额、20日序列、20日累计、趋势描述                                   |
 
 若脚本运行失败（`numpy`/`pandas` 未安装等），可跳过此步——AI 将从原始 market_data JSON 直接分析，但准确度会有所下降。依赖：`pip install numpy pandas`
 
 ### Step 4: 准备数据包
 
 读取 `assets/market_data_YYYY-MM-DD.json`、`assets/analysis_YYYY-MM-DD.json` 和 `assets/news_data_YYYY-MM-DD.json`，构建三个 Subagent 的数据子集。
+
+**⚠️ 双源强制要求**：三个 Subagent 必须同时持有 akshare 行情数据和 tavily 新闻数据。若 `news_data` 文件不存在或为空，必须先执行 Step 3 搜索新闻，**不允许**跳过新闻采集直接进入 Phase 2。两类数据是报告深度的双支柱，缺少任一类都会导致分析仅停留在数字描述层面。
 
 **检查采集状态**：
 
@@ -103,6 +109,8 @@ python scripts/analyze_market.py --date YYYYMMDD
 **使用 subagent 并行启动三个分析任务**。每个 subagent 的 prompt 包含：角色定义 + 对应数据子集 + 分析任务清单 + 输出格式。
 
 分析框架详见 → `references/analysis-framework.md`
+
+**所有 Subagent 的核心输出要求**：除了量化数据字段，每个模块必须输出 `analysis_text` 叙述字段（见 analysis-framework.md 各 Subagent JSON schema）。叙述字段必须双源融合——同时引用 akshare 数字和 tavily 新闻事件，推断市场参与者动机，不只描述现象。
 
 ### Subagent A: 宏观事件解读师 × 情绪量化分析师
 
@@ -135,6 +143,7 @@ python scripts/analyze_market.py --date YYYYMMDD
 - 基于 `analysis.fund_structure.behavior_type` + 龙虎榜席位解读资金意图
 
 **输出**: JSON（结构见 analysis-framework.md「Subagent B」节）
+
 - 龙虎榜席位解读
 
 **输出**: JSON（结构见 analysis-framework.md「Subagent B」节）
@@ -175,6 +184,7 @@ HTML 设计规范详见 → `references/html-design-spec.md`
 7. **body 最大宽度 1100px**，水平居中，内边距 48px/40px，辅助文字≥11px
 8. **所有数字使用等宽字体**（`SFMono-Regular, Menlo, Consolas`）
 9. **卡片圆角 12-16px**，投影 `0 4px 16px rgba(0,0,0,0.08)`
+10. **必须渲染叙述区块**：每个模块必须包含来自 `analysis_text` 的 `.insight-block` 深度解读段落，禁止只渲染数字表格/图表而省略文字分析。叙述区块 CSS 组件见 `html-design-spec.md「深度叙述区块」`节。
 
 ### 页面结构
 
@@ -291,10 +301,10 @@ assets/market-debrief-YYYY-MM-DD.html
 
 ## 脚本索引
 
-| 脚本                           | 用途                                          | 依赖              |
-| ------------------------------ | --------------------------------------------- | ----------------- |
-| `scripts/fetch_market_data.py` | AkShare 行情原始数据一键采集 → JSON           | akshare, pandas   |
-| `scripts/analyze_market.py`    | 量化指标计算引擎：情绪/技术/估值/行业/资金 → JSON | numpy, pandas  |
-| `scripts/search_news.sh`       | Tavily 新闻搜索 → JSON                        | jq, curl, Tavily  |
+| 脚本                           | 用途                                              | 依赖             |
+| ------------------------------ | ------------------------------------------------- | ---------------- |
+| `scripts/fetch_market_data.py` | AkShare 行情原始数据一键采集 → JSON               | akshare, pandas  |
+| `scripts/analyze_market.py`    | 量化指标计算引擎：情绪/技术/估值/行业/资金 → JSON | numpy, pandas    |
+| `scripts/search_news.sh`       | Tavily 新闻搜索 → JSON                            | jq, curl, Tavily |
 
 依赖安装：`pip install akshare numpy pandas`、`jq` + `curl`（Bash）、Tavily API token（可选）

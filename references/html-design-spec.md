@@ -757,6 +757,126 @@ formatter: function(params) {
 
 ---
 
+## 深度叙述区块（分析文字组件）
+
+> 每个模块必须包含由 Subagent `analysis_text` 字段生成的叙述段落。叙述区块紧随图表之后，是报告质量的核心体现。
+
+### 叙述区块 CSS 组件
+
+```css
+/* 深度分析区块 */
+.insight-block {
+  background: linear-gradient(135deg, #FFF8F0 0%, #FAF7F2 100%);
+  border-left: 3px solid var(--color-warning);
+  border-radius: 0 10px 10px 0;
+  padding: 16px 20px;
+  margin: 20px 0;
+}
+.insight-block .insight-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-warning);
+  margin-bottom: 8px;
+  display: block;
+}
+.insight-block p {
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--text-secondary);
+  margin: 0 0 8px 0;
+}
+.insight-block p:last-child { margin-bottom: 0; }
+.insight-block strong { color: var(--text-primary); }
+
+/* 双源标签：标注来源是AkShare数据还是Tavily新闻 */
+.source-tag {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  margin-left: 4px;
+  vertical-align: middle;
+  font-weight: 600;
+}
+.source-tag.from-data { background: #D5E8D4; color: #2E7D32; }
+.source-tag.from-news { background: #DAE8FC; color: #1565C0; }
+```
+
+### 叙述区块 HTML 模板
+
+每个分析模块末尾放置 `.insight-block`，内容来自 Subagent JSON 中的 `analysis_text` 字段：
+
+```html
+<!-- Module 1 叙述区块 -->
+<div class="insight-block">
+  <span class="insight-label">深度解读</span>
+  <p>[module1.analysis_text.event_interpretation 内容]</p>
+  <p>[module1.analysis_text.macro_judgment 内容]</p>
+</div>
+
+<!-- Module 2 叙述区块 -->
+<div class="insight-block">
+  <span class="insight-label">情绪解读</span>
+  <p>[module2.analysis_text.emotion_portrait 内容]</p>
+  <p>[module2.analysis_text.trend_insight 内容]</p>
+</div>
+
+<!-- Module 3 叙述区块（分两段） -->
+<div class="insight-block">
+  <span class="insight-label">板块解读</span>
+  <p>[module3.analysis_text.sector_narrative 内容]</p>
+  <p>[module3.analysis_text.ecology_insight 内容]</p>
+</div>
+
+<!-- Module 4 叙述区块 -->
+<div class="insight-block">
+  <span class="insight-label">资金解读</span>
+  <p>[module4.analysis_text.fund_behavior_insight 内容]</p>
+  <p>[module4.analysis_text.migration_narrative 内容]</p>
+</div>
+
+<!-- Module 5 叙述区块 -->
+<div class="insight-block">
+  <span class="insight-label">技术解读</span>
+  <p>[module5.analysis_text.technical_narrative 内容]</p>
+  <p>[module5.analysis_text.valuation_insight 内容]</p>
+</div>
+```
+
+### 叙述区块放置位置规则
+
+| 模块 | 叙述区块位置 |
+|------|-----------|
+| M1 宏观定价 | 事件表之后，宏观坐标雷达图之前 |
+| M2 情绪温度计 | 情绪仪表盘之后，5日趋势折线之前 |
+| M3 板块分析 | 行业条形图之后，TOP2解剖表之前 |
+| M4 资金路线图 | 资金结构柱图之后，桑基图之前 |
+| M5 技术+估值 | K线图之后，估值百分位轨道之前 |
+| M6 情景预判 | 三情景概率条之前（每个情景卡展开时显示 rationale） |
+
+### TOP2板块解剖卡新增字段
+
+在 3.2 TOP 2 板块解剖的表格中，新增一行「深度解读」，内容来自 `top2_sectors[].deep_analysis`：
+
+```html
+<tr>
+  <td style="vertical-align:top; white-space:nowrap;"><strong>深度解读</strong></td>
+  <td colspan="4" class="insight-inline">[deep_analysis 内容]</td>
+</tr>
+```
+```css
+.insight-inline {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  font-style: italic;
+}
+```
+
+---
+
 ## 内容质量控制
 
 ### 禁用表达（出现即重写）
