@@ -103,6 +103,12 @@ if [ -z "$TARGET_DATE" ]; then
     TARGET_DATE=$(date +%Y-%m-%d)
 fi
 
+# 默认写入 assets/ 目录，文件名包含日期
+if [ -z "$OUTPUT_FILE" ]; then
+    OUTPUT_FILE="assets/news_data_${TARGET_DATE}.json"
+fi
+mkdir -p "$(dirname "$OUTPUT_FILE")"
+
 # ── 搜索查询列表 ─────────────────────────────────────────
 
 # 并行执行多个搜索查询以覆盖所有分析模块需要的新闻
@@ -114,6 +120,7 @@ QUERIES=(
 )
 
 ALL_RESULTS="[]"
+FAILED_QUERIES=0
 
 for query in "${QUERIES[@]}"; do
     echo "[搜索] $query" >&2
@@ -142,15 +149,21 @@ for query in "${QUERIES[@]}"; do
         --header 'Content-Type: application/json' \
         --header 'Accept: application/json, text/event-stream' \
         --header 'x-client-source: market-debrief-cn' \
-        --data "$MCP_REQUEST")
+        --data "$MCP_REQUEST") || RESPONSE=""
 
     JSON_DATA=$(echo "$RESPONSE" | grep '^data:' | sed 's/^data://' | head -1)
 
+    QUERY_SUCCESS=0
     if [ -n "$JSON_DATA" ]; then
         RESULT=$(echo "$JSON_DATA" | jq '.result.structuredContent // .result.content[0].text // empty' 2>/dev/null)
         if [ -n "$RESULT" ] && [ "$RESULT" != "null" ]; then
             ALL_RESULTS=$(echo "$ALL_RESULTS" | jq --argjson r "[$RESULT]" '. + $r' 2>/dev/null || echo "$ALL_RESULTS")
+            QUERY_SUCCESS=1
         fi
+    fi
+    if [ "$QUERY_SUCCESS" -eq 0 ]; then
+        FAILED_QUERIES=$((FAILED_QUERIES + 1))
+        echo "[WARN] 查询无有效结果: $query" >&2
     fi
 done
 
@@ -159,15 +172,16 @@ done
 OUTPUT=$(jq -n \
     --arg date "$TARGET_DATE" \
     --argjson results "$ALL_RESULTS" \
+    --argjson failed "$FAILED_QUERIES" \
     '{
         "target_date": $date,
         "search_count": ($results | length),
+        "_failed_queries": $failed,
         "results": $results
     }')
 
-if [ -n "$OUTPUT_FILE" ]; then
-    echo "$OUTPUT" > "$OUTPUT_FILE"
-    echo "[完成] 已写入 $OUTPUT_FILE" >&2
-else
-    echo "$OUTPUT"
+echo "$OUTPUT" > "$OUTPUT_FILE"
+echo "[完成] 已写入 $OUTPUT_FILE" >&2
+if [ "$FAILED_QUERIES" -gt 0 ]; then
+    echo "[WARN] ${FAILED_QUERIES}/${#QUERIES[@]} 个查询失败" >&2
 fi

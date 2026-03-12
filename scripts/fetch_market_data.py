@@ -14,6 +14,7 @@ import json
 import sys
 import warnings
 from datetime import datetime, timedelta
+from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
@@ -24,6 +25,9 @@ except ImportError:
     print("请先安装依赖: pip install akshare pandas", file=sys.stderr)
     sys.exit(1)
 
+
+# ── 失败项追踪 ────────────────────────────────────────────────
+_failed_items: list = []
 
 # ── 指数代码映射 ─────────────────────────────────────────────
 INDEX_MAP = {
@@ -45,10 +49,12 @@ PE_SYMBOLS = {
 
 
 def safe_call(func, *args, **kwargs):
-    """安全调用 akshare 接口，失败返回 None"""
+    """安全调用 akshare 接口，失败返回 None，并记录失败项"""
     try:
         return func(*args, **kwargs)
     except Exception as e:
+        label = func.__name__.replace("fetch_", "").replace("_", " ")
+        _failed_items.append(label)
         print(f"[WARN] {func.__name__} 调用失败: {e}", file=sys.stderr)
         return None
 
@@ -274,6 +280,9 @@ def collect_all(date_str):
     print("[11/11] 拉取龙虎榜...", file=sys.stderr)
     data["lhb"] = fetch_lhb(date_str)
 
+    data["_failed_items"] = _failed_items.copy()
+    if _failed_items:
+        print(f"[WARN] 采集失败项: {', '.join(_failed_items)}", file=sys.stderr)
     print("[DONE] 数据采集完成", file=sys.stderr)
     return data
 
@@ -281,20 +290,29 @@ def collect_all(date_str):
 def main():
     parser = argparse.ArgumentParser(description="A股日报数据采集")
     parser.add_argument("--date", help="目标日期 YYYYMMDD（默认最近交易日）")
-    parser.add_argument("--output", "-o", help="输出文件路径（默认 stdout）")
+    parser.add_argument("--output", "-o",
+                        help="输出文件路径（默认 assets/market_data_YYYY-MM-DD.json）")
     args = parser.parse_args()
 
     date_str = get_latest_trade_date(args.date)
     data = collect_all(date_str)
 
-    json_str = json.dumps(data, ensure_ascii=False, indent=2, default=str)
-
+    # 默认写入 assets/ 目录，文件名包含日期
     if args.output:
-        with open(args.output, "w", encoding="utf-8") as f:
-            f.write(json_str)
-        print(f"[INFO] 已写入 {args.output}", file=sys.stderr)
+        output_path = Path(args.output)
     else:
-        print(json_str)
+        date_fmt = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+        output_path = Path("assets") / f"market_data_{date_fmt}.json"
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    json_str = json.dumps(data, ensure_ascii=False, indent=2, default=str)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(json_str)
+    print(f"[INFO] 已写入 {output_path}", file=sys.stderr)
+
+    if _failed_items:
+        print(f"[WARN] 以下数据项获取失败，将在报告中标注: {', '.join(_failed_items)}",
+              file=sys.stderr)
 
 
 if __name__ == "__main__":

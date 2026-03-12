@@ -32,7 +32,7 @@ Phase 3: 渲染 Agent 整合输出 HTML
 ### Step 2: 运行数据采集脚本
 
 ```bash
-python scripts/fetch_market_data.py --date YYYYMMDD --output market_data.json
+python scripts/fetch_market_data.py --date YYYYMMDD
 ```
 
 脚本自动拉取 11 类数据（详见 `references/akshare-api.md`）：
@@ -42,17 +42,21 @@ python scripts/fetch_market_data.py --date YYYYMMDD --output market_data.json
 - 涨停池/跌停池/炸板池/强势连板股
 - 北向资金、两融余额、国债收益率、龙虎榜
 
-⚠️ 东方财富数据源偶尔限流导致个别接口失败（返回空数组）——脚本已内置容错，失败项会在 stderr 显示 `[WARN]`。若关键数据缺失，可等待 10 秒后重跑。
+脚本**自动写入** `assets/market_data_YYYY-MM-DD.json`（assets/ 目录不存在时自动创建）。
+
+⚠️ 东方财富数据源偶尔限流导致个别接口失败（返回空数组）——脚本已内置容错，失败项会在 stderr 显示 `[WARN]`，并记录在输出 JSON 的 `_failed_items` 字段中。若关键数据缺失，可等待 10 秒后重跑。
 
 ### Step 3: 搜索新闻事件
 
 使用 Tavily 搜索当日关键事件。在 bash 环境下运行：
 
 ```bash
-bash scripts/search_news.sh '{"date": "YYYY-MM-DD"}' news_data.json
+bash scripts/search_news.sh '{"date": "YYYY-MM-DD"}'
 ```
 
 脚本自动执行 4 组搜索查询，覆盖：A股政策新闻、板块热点、隔夜外盘、宏观经济数据。
+
+脚本**自动写入** `assets/news_data_YYYY-MM-DD.json`，失败的查询记录在 `_failed_queries` 字段。
 
 ⚠️ 需要 Tavily API token（自动从 MCP 缓存获取，或设置 `TAVILY_API_KEY` 环境变量）。
 
@@ -60,7 +64,12 @@ bash scripts/search_news.sh '{"date": "YYYY-MM-DD"}' news_data.json
 
 ### Step 4: 准备数据包
 
-读取 `market_data.json` 和 `news_data.json`，构建三个 Subagent 的数据子集。
+读取 `assets/market_data_YYYY-MM-DD.json` 和 `assets/news_data_YYYY-MM-DD.json`，构建三个 Subagent 的数据子集。
+
+**检查采集状态**：
+- 若 `market_data["_failed_items"]` 非空，记录失败项列表（例：`["index pe", "lhb"]`）
+- 若 `news_data["_failed_queries"] > 0`，记录失败查询数
+- 将以上信息汇总为 `data_warnings` 传递给渲染 Agent，用于最终回复告知用户
 
 ---
 
@@ -133,14 +142,17 @@ HTML 设计规范详见 → `references/html-design-spec.md`
 1. **冲突检查**：若三份 JSON 数据矛盾，以 Subagent C 数据为准
 2. **统一视角**：最终报告不出现 Agent 角色名，以统一研究报告形式呈现
 3. **模块标题用结论式句式**（如「资金从消费向科技大迁移，赚钱效应持续修复」）
-4. **FT 风格固定**：三文鱼粉底色系（`#FAF7F2`），涨红（`#C0392B`）跌蓝（`#2C3E50`）
-5. **单文件输出**：不引用本地资源，ECharts 通过 CDN 加载
-6. **body 最大宽度 1100px**，水平居中，内边距 40px，辅助文字≥11px
+4. **FT 风格固定**：三文鱼粉底色系（`#FAF7F2`），涨红（`#C0392B`）跌蓝深（`#1A2E3E`），espresso header（`#1C0F08`）
+5. **字体**：`"Georgia", "Noto Serif SC", "PingFang SC"` 优先，展现权威感
+6. **单文件输出**：不引用本地资源，ECharts 通过 CDN 加载
+7. **body 最大宽度 1100px**，水平居中，内边距 48px/40px，辅助文字≥11px
+8. **所有数字使用等宽字体**（`SFMono-Regular, Menlo, Consolas`）
+9. **卡片圆角 12-16px**，投影 `0 4px 16px rgba(0,0,0,0.08)`
 
 ### 页面结构
 
 ```
-[顶部仪表盘横条]  指数收盘+涨跌幅 | 成交额 | 情绪分 | 今日定性一句话
+[顶部仪表盘横条]  三行布局：品牌行 | 指数行（6个指数）| 概览行（成交/情绪/涨停/北向）
 [Module 1] 宏观定价扫描       ← Subagent A
 [Module 2] 市场情绪温度计     ← Subagent A
 [Module 3] 板块结构性分析     ← Subagent B
@@ -150,29 +162,42 @@ HTML 设计规范详见 → `references/html-design-spec.md`
 [页脚] 数据来源声明 + 免责声明
 ```
 
-### 可视化清单
+### 可视化清单（强制要求）
 
-| 模块             | 图表类型                 | 引擎                 |
-| ---------------- | ------------------------ | -------------------- |
-| M2 情绪趋势      | 5日折线图                | ECharts line         |
-| M2 散户/机构对比 | 双半圆仪表盘             | ECharts gauge        |
-| M3 行业热力      | 横向条形图（涨跌幅排序） | ECharts bar          |
-| M3 轮动周期      | 5阶段进度条              | CSS                  |
-| M4 资金迁移      | 桑基图或流向箭头         | ECharts sankey / CSS |
-| M4 超大单/小单   | 分组柱状图               | ECharts bar          |
-| M5 K线图         | 近30日蜡烛图             | ECharts candlestick  |
-| M5 PE百分位      | 水平轨道滑块             | CSS                  |
-| M5 ERP           | 双轴折线图               | ECharts line         |
-| M6 三情景概率    | 分段条                   | CSS                  |
-| M6 情景卡片      | 可折叠 accordion         | HTML/CSS/JS          |
+| 模块 | 图表 | 引擎 | 尺寸 | 交互 |
+|------|------|------|------|------|
+| M1 | 事件定价状态徽章表 | CSS badge | — | — |
+| M1 | 外盘市场胶囊行 | CSS pill | — | — |
+| M2 | 综合情绪仪表盘（大） + 散户/机构仪表盘（小×2） | ECharts gauge | 350px / 220px | tooltip |
+| M2 | 5日情绪折线（含markArea过热区） | ECharts line | 200px mini | hover |
+| M2 | 分项评分进度条表 | CSS | — | — |
+| M3 | 行业涨跌幅横向条形图（全行业排序） | ECharts bar | tall 460px | dataZoom+tooltip |
+| M3 | 轮动5阶段进度条（含脉冲动画） | CSS | — | — |
+| M3 | 涨停生态雷达图 | ECharts radar | half 280px | tooltip |
+| M4 | 资金结构分组柱状图（四类资金） | ECharts bar | full 380px | tooltip |
+| M4 | 主力资金30日走势折线 | ECharts line | mini 200px | hover |
+| M4 | 资金迁移桑基图 | ECharts sankey | full 380px | emphasis adjacency |
+| M5 | K线图（60日，含MA5/20/60+量能附图，Tab切换三指数） | ECharts candlestick | tall 460px | dataZoom+tab |
+| M5 | 多指数PE百分位彩色轨道（4条） | CSS | — | hover data-pct |
+| M5 | ERP双轴折线（近2年） | ECharts line | full 380px | tooltip markLine |
+| M6 | 三情景概率分段条 | CSS | 44px | — |
+| M6 | 情景卡片accordion（3张可展开） | HTML/CSS/JS | — | click toggle |
+| M6 | 观测清单交互表（优先级badge） | CSS badge+table | — | — |
+
+**原则**：每个模块至少含 **2个** 可视化组件（图表或交互组件），禁止出现纯文字罗列的模块。
 
 ### 输出文件
 
-将最终 HTML 写入工作目录：
+将最终 HTML 写入 assets 目录：
 
 ```
-market-debrief-YYYY-MM-DD.html
+assets/market-debrief-YYYY-MM-DD.html
 ```
+
+> 每日产出统一存放于 `assets/`：
+> - `assets/market_data_YYYY-MM-DD.json` — 原始行情数据
+> - `assets/news_data_YYYY-MM-DD.json` — 新闻搜索结果
+> - `assets/market-debrief-YYYY-MM-DD.html` — 最终日报
 
 ---
 
@@ -208,6 +233,21 @@ market-debrief-YYYY-MM-DD.html
 **必须中文**：所有分析结论、图表标题、评价性用语、方向性判断
 
 **禁止出现**：「总而言之」「需要指出的是」「值得注意的是」「总体来看」「综上所述」
+
+---
+
+## 数据失败项告知（必须执行）
+
+生成报告完毕后，在最终回复中**必须以中文明确告知用户**：
+
+1. **若所有数据均采集成功**：说明「本期数据采集完整，所有 11 类行情数据和新闻查询均成功」
+2. **若存在失败项**：列出具体失败内容，例如：
+
+   > ⚠️ 本期数据采集部分失败，以下内容未能获取，相关模块分析准确度可能受影响：
+   > - **行情数据**：龙虎榜（lhb）、指数PE（index pe）
+   > - **新闻查询**：2/4 个查询无有效返回
+
+**来源**：读取 `assets/market_data_YYYY-MM-DD.json` 中的 `_failed_items` 字段，以及 `assets/news_data_YYYY-MM-DD.json` 中的 `_failed_queries` 字段。
 
 ---
 
