@@ -1,4 +1,20 @@
-docs/
-skills/
-claude.md
+# Assets files - 每日生成的数据（按日期组织）
+assets/
+*.json
+!references/**/*.json
+
+# Environment variables
 .env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+skills/
