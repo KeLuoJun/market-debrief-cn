@@ -1,0 +1,301 @@
+#!/usr/bin/env python3
+"""
+A股日报数据采集脚本 - 基于 AkShare
+一次性拉取所有分析模块所需的市场数据，输出结构化 JSON。
+
+用法：
+  python scripts/fetch_market_data.py                    # 默认最近交易日
+  python scripts/fetch_market_data.py --date 20260311    # 指定日期
+  python scripts/fetch_market_data.py --output data.json # 写入文件
+"""
+
+import argparse
+import json
+import sys
+import warnings
+from datetime import datetime, timedelta
+
+warnings.filterwarnings("ignore")
+
+try:
+    import akshare as ak
+    import pandas as pd
+except ImportError:
+    print("请先安装依赖: pip install akshare pandas", file=sys.stderr)
+    sys.exit(1)
+
+
+# ── 指数代码映射 ─────────────────────────────────────────────
+INDEX_MAP = {
+    "上证指数": "sh000001",
+    "深证成指": "sz399001",
+    "创业板指": "sz399006",
+    "科创50":  "sh000688",
+    "沪深300": "sh000300",
+    "中证500": "sh000905",
+}
+
+# PE 查询用名（stock_index_pe_lg 接口支持的中文名）
+PE_SYMBOLS = {
+    "沪深300": "沪深300",
+    "中证500": "中证500",
+    "中证1000": "中证1000",
+    "上证50": "上证50",
+}
+
+
+def safe_call(func, *args, **kwargs):
+    """安全调用 akshare 接口，失败返回 None"""
+    try:
+        return func(*args, **kwargs)
+    except Exception as e:
+        print(f"[WARN] {func.__name__} 调用失败: {e}", file=sys.stderr)
+        return None
+
+
+def df_to_records(df, n=None):
+    """DataFrame → list[dict]，可选截取前 n 行"""
+    if df is None or df.empty:
+        return []
+    if n:
+        df = df.head(n)
+    return json.loads(df.to_json(orient="records", force_ascii=False, date_format="iso"))
+
+
+def get_latest_trade_date(target_date=None):
+    """确定目标交易日（默认取最近收盘日）"""
+    if target_date:
+        return target_date
+    # 用上证指数最近数据判断
+    df = safe_call(ak.stock_zh_index_daily_em, symbol="sh000001",
+                   start_date=(datetime.now() - timedelta(days=10)
+                               ).strftime("%Y%m%d"),
+                   end_date=datetime.now().strftime("%Y%m%d"))
+    if df is not None and len(df) > 0:
+        return pd.to_datetime(df["date"].iloc[-1]).strftime("%Y%m%d")
+    return datetime.now().strftime("%Y%m%d")
+
+
+# ── 数据采集函数 ─────────────────────────────────────────────
+
+def fetch_index_daily(date_str, lookback_days=365):
+    """主要指数近一年日线数据（OHLCV），用于 MA、K线、量价分析"""
+    start = (datetime.strptime(date_str, "%Y%m%d") -
+             timedelta(days=lookback_days)).strftime("%Y%m%d")
+    result = {}
+    for name, code in INDEX_MAP.items():
+        df = safe_call(ak.stock_zh_index_daily_em, symbol=code,
+                       start_date=start, end_date=date_str)
+        if df is not None and len(df) > 0:
+            result[name] = df_to_records(df)
+    return result
+
+
+def fetch_index_pe():
+    """主要指数 PE(TTM) 历史序列"""
+    result = {}
+    for label, symbol in PE_SYMBOLS.items():
+        df = safe_call(ak.stock_index_pe_lg, symbol=symbol)
+        if df is not None and len(df) > 0:
+            latest = df.iloc[-1].to_dict()
+            # 计算历史百分位
+            pe_col = "滚动市盈率"
+            if pe_col in df.columns:
+                current_pe = df[pe_col].iloc[-1]
+                percentile = (df[pe_col] < current_pe).mean()
+                latest["历史百分位"] = round(percentile, 4)
+            result[label] = {
+                "latest": {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in latest.items()},
+                "recent_60": df_to_records(df.tail(60)),
+            }
+    return result
+
+
+def fetch_all_a_pb():
+    """全A股 PB 中位数及历史百分位"""
+    df = safe_call(ak.stock_a_all_pb)
+    if df is None:
+        return None
+    latest = df.iloc[-1].to_dict()
+    return {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in latest.items()}
+
+
+def fetch_market_fund_flow():
+    """全市场资金流向（超大单/大单/中单/小单）"""
+    df = safe_call(ak.stock_market_fund_flow)
+    if df is None:
+        return []
+    return df_to_records(df.tail(30))
+
+
+def fetch_sector_fund_flow():
+    """行业资金流向排名"""
+    df = safe_call(ak.stock_sector_fund_flow_rank,
+                   indicator="今日", sector_type="行业资金流")
+    if df is None:
+        return []
+    return df_to_records(df)
+
+
+def fetch_industry_board():
+    """申万行业板块行情"""
+    df = safe_call(ak.stock_board_industry_name_em)
+    if df is None:
+        return []
+    return df_to_records(df)
+
+
+def fetch_limit_up(date_str):
+    """涨停池"""
+    df = safe_call(ak.stock_zt_pool_em, date=date_str)
+    if df is None:
+        return {"count": 0, "stocks": []}
+    return {
+        "count": len(df),
+        "stocks": df_to_records(df),
+    }
+
+
+def fetch_limit_down(date_str):
+    """跌停池"""
+    df = safe_call(ak.stock_zt_pool_dtgc_em, date=date_str)
+    if df is None:
+        return {"count": 0, "stocks": []}
+    return {
+        "count": len(df),
+        "stocks": df_to_records(df),
+    }
+
+
+def fetch_broken_limit(date_str):
+    """炸板池"""
+    df = safe_call(ak.stock_zt_pool_zbgc_em, date=date_str)
+    if df is None:
+        return {"count": 0, "stocks": []}
+    return {
+        "count": len(df),
+        "stocks": df_to_records(df),
+    }
+
+
+def fetch_northbound():
+    """北向资金历史数据（沪股通+深股通汇总）"""
+    result = {}
+    for channel in ["沪股通", "深股通"]:
+        df = safe_call(ak.stock_hsgt_hist_em, symbol=channel)
+        if df is not None and len(df) > 0:
+            result[channel] = df_to_records(df.tail(30))
+    return result
+
+
+def fetch_margin_account():
+    """两融余额"""
+    df = safe_call(ak.stock_margin_account_info)
+    if df is None:
+        return []
+    return df_to_records(df.tail(30))
+
+
+def fetch_bond_yield(date_str):
+    """国债收益率"""
+    start = (datetime.strptime(date_str, "%Y%m%d") -
+             timedelta(days=30)).strftime("%Y%m%d")
+    df = safe_call(ak.bond_china_yield, start_date=start, end_date=date_str)
+    if df is None:
+        return []
+    # 只取中债国债收益率曲线
+    df_gov = df[df["曲线名称"] == "中债国债收益率曲线"]
+    return df_to_records(df_gov)
+
+
+def fetch_lhb(date_str):
+    """龙虎榜详情"""
+    df = safe_call(ak.stock_lhb_detail_em,
+                   start_date=date_str, end_date=date_str)
+    if df is None:
+        return []
+    return df_to_records(df)
+
+
+def fetch_strong_limit_up(date_str):
+    """强势连板股"""
+    df = safe_call(ak.stock_zt_pool_strong_em, date=date_str)
+    if df is None:
+        return []
+    return df_to_records(df)
+
+
+# ── 主流程 ───────────────────────────────────────────────────
+
+def collect_all(date_str):
+    """采集全部数据，返回结构化字典"""
+    print(f"[INFO] 目标交易日: {date_str}", file=sys.stderr)
+
+    data = {
+        "meta": {
+            "target_date": date_str,
+            "collected_at": datetime.now().isoformat(),
+        },
+    }
+
+    print("[1/11] 拉取主要指数日线...", file=sys.stderr)
+    data["index_daily"] = fetch_index_daily(date_str)
+
+    print("[2/11] 拉取指数PE估值...", file=sys.stderr)
+    data["index_pe"] = fetch_index_pe()
+
+    print("[3/11] 拉取全A PB...", file=sys.stderr)
+    data["all_a_pb"] = fetch_all_a_pb()
+
+    print("[4/11] 拉取全市场资金流向...", file=sys.stderr)
+    data["market_fund_flow"] = fetch_market_fund_flow()
+
+    print("[5/11] 拉取行业资金流向...", file=sys.stderr)
+    data["sector_fund_flow"] = fetch_sector_fund_flow()
+
+    print("[6/11] 拉取行业板块行情...", file=sys.stderr)
+    data["industry_board"] = fetch_industry_board()
+
+    print("[7/11] 拉取涨跌停数据...", file=sys.stderr)
+    data["limit_up"] = fetch_limit_up(date_str)
+    data["limit_down"] = fetch_limit_down(date_str)
+    data["broken_limit"] = fetch_broken_limit(date_str)
+    data["strong_limit_up"] = fetch_strong_limit_up(date_str)
+
+    print("[8/11] 拉取北向资金...", file=sys.stderr)
+    data["northbound"] = fetch_northbound()
+
+    print("[9/11] 拉取两融余额...", file=sys.stderr)
+    data["margin"] = fetch_margin_account()
+
+    print("[10/11] 拉取国债收益率...", file=sys.stderr)
+    data["bond_yield"] = fetch_bond_yield(date_str)
+
+    print("[11/11] 拉取龙虎榜...", file=sys.stderr)
+    data["lhb"] = fetch_lhb(date_str)
+
+    print("[DONE] 数据采集完成", file=sys.stderr)
+    return data
+
+
+def main():
+    parser = argparse.ArgumentParser(description="A股日报数据采集")
+    parser.add_argument("--date", help="目标日期 YYYYMMDD（默认最近交易日）")
+    parser.add_argument("--output", "-o", help="输出文件路径（默认 stdout）")
+    args = parser.parse_args()
+
+    date_str = get_latest_trade_date(args.date)
+    data = collect_all(date_str)
+
+    json_str = json.dumps(data, ensure_ascii=False, indent=2, default=str)
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(json_str)
+        print(f"[INFO] 已写入 {args.output}", file=sys.stderr)
+    else:
+        print(json_str)
+
+
+if __name__ == "__main__":
+    main()
