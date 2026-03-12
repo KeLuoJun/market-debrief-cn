@@ -62,11 +62,36 @@ bash scripts/search_news.sh '{"date": "YYYY-MM-DD"}'
 
 > 若无法使用 Tavily，可跳过新闻采集——Subagent A 将仅基于量化数据分析，不做事件归因。
 
+### Step 3.5: 运行量化分析引擎（新增）
+
+在完成行情数据采集后，运行分析脚本对原始数据做预处理，输出结构化量化指标：
+
+```bash
+python scripts/analyze_market.py --date YYYYMMDD
+```
+
+脚本**自动写入** `assets/analysis_YYYY-MM-DD.json`，包含：
+
+| 模块 | 预计算内容 |
+|------|-----------|
+| 情绪评分 | 综合分（0-100）、散户/机构拆解分、各分项得分、60日成交额百分位 |
+| 技术矩阵 | 6指数 MA5/10/20/60/120/250 值及偏离度、均线排列判断、量比、K线形态识别 |
+| 支撑/压力位 | MA位/斐波那契38.2%/50%/61.8%/VWAP30日/整数关口，距当前价%标注 |
+| 涨跌拆解 | 隔夜涨幅=开盘/前收-1（反映消息面）、日内涨幅=收盘/开盘-1（反映盘中行为） |
+| 行业分析 | 四分类强弱表、成长/价值均涨幅差、资金净流入 TOP3/BOTTOM3 行业 |
+| 涨停生态 | 封板率、连板分布、最高连板数+名称、主题集中度、赚钱效应评级 |
+| 资金结构 | 超大/大/中/小单净流入（亿元）、机构/散户行为类型判断、资金迁移类型 |
+| 估值 & ERP | 各指数 PE 历史百分位、全A PB、ERP%（含60日均值/标准差/信号） |
+| 北向资金 | 当日净额、20日序列、20日累计、趋势描述 |
+
+若脚本运行失败（`numpy`/`pandas` 未安装等），可跳过此步——AI 将从原始 market_data JSON 直接分析，但准确度会有所下降。依赖：`pip install numpy pandas`
+
 ### Step 4: 准备数据包
 
-读取 `assets/market_data_YYYY-MM-DD.json` 和 `assets/news_data_YYYY-MM-DD.json`，构建三个 Subagent 的数据子集。
+读取 `assets/market_data_YYYY-MM-DD.json`、`assets/analysis_YYYY-MM-DD.json` 和 `assets/news_data_YYYY-MM-DD.json`，构建三个 Subagent 的数据子集。
 
 **检查采集状态**：
+
 - 若 `market_data["_failed_items"]` 非空，记录失败项列表（例：`["index pe", "lhb"]`）
 - 若 `news_data["_failed_queries"] > 0`，记录失败查询数
 - 将以上信息汇总为 `data_warnings` 传递给渲染 Agent，用于最终回复告知用户
@@ -83,14 +108,15 @@ bash scripts/search_news.sh '{"date": "YYYY-MM-DD"}'
 
 **模块**: Module 1（宏观定价扫描）+ Module 2（市场情绪温度计）
 
-**提供数据**: tavily 新闻、北向资金、成交额历史序列、涨跌停数量、两融余额变化、全市场资金流向（超大单方向）
+**提供数据**: tavily 新闻、`analysis.sentiment`（各分项得分、综合分、散户/机构分、60日百分位）、`analysis.northbound`（趋势描述）、`market_data`（涨跌停原始数据、两融）
 
 **核心任务**:
 
 - 从新闻中筛选有效事件，判断定价完成度（已充分/未充分/过度）
 - 更新宏观三维坐标（经济动能/流动性/风险偏好）
-- 计算综合情绪分（0-100），拆解散户/机构代理分
-- 判断散户-机构分歧类型（共识多头/空头/散热机冷/散冷机热）
+- **直接使用** `analysis.sentiment.composite_score` 作为综合情绪分（无需重算）
+- 确认散户/机构分歧类型（使用 `analysis.sentiment.divergence_type`）
+- 判断情绪趋势斜率（加速上行/高位走平/拐头下行/筑底反弹）
 
 **输出**: JSON（结构见 analysis-framework.md「Subagent A」节）
 
@@ -98,15 +124,17 @@ bash scripts/search_news.sh '{"date": "YYYY-MM-DD"}'
 
 **模块**: Module 3（板块结构性分析）+ Module 4（资金路线图）
 
-**提供数据**: 行业涨跌幅、行业资金流向、涨停池/炸板池/强势股、龙虎榜
+**提供数据**: `analysis.industry`（四分类表、成长/价值风格、资金流向TOP/BOTTOM3、迁移类型）、`analysis.limit_up_ecology`（封板率、连板分布、主题集中度、赚钱效应）、`analysis.fund_structure`（机构/散户行为类型、超大单趋势）、龙虎榜
 
 **核心任务**:
 
-- 行业强弱四分类 + 成长/价值风格强弱
+- **直接使用** `analysis.industry.heatmap` 做行业四分类（无需重算）
+- **直接使用** `analysis.industry.style` 输出成长/价值量化对比
 - TOP 2 板块深度解剖（驱动力/轮动周期/资金主体/持续性评级）
-- 涨停板生态快照 + 赚钱效应判断
-- 全市场资金结构分析（机构/散户行为组合）
-- 资金迁移路线（来源→目标→迁移性质）
+- **直接使用** `analysis.limit_up_ecology` 涨停板生态指标
+- 基于 `analysis.fund_structure.behavior_type` + 龙虎榜席位解读资金意图
+
+**输出**: JSON（结构见 analysis-framework.md「Subagent B」节）
 - 龙虎榜席位解读
 
 **输出**: JSON（结构见 analysis-framework.md「Subagent B」节）
@@ -115,16 +143,15 @@ bash scripts/search_news.sh '{"date": "YYYY-MM-DD"}'
 
 **模块**: Module 5（技术形态与估值）+ Module 6（次日预判与历史镜像）
 
-**提供数据**: 指数日线序列（近250日）、指数PE数据、全A PB、国债收益率
+**提供数据**: `analysis.technical`（MA矩阵、均线排列、量比、K线形态、支撑/压力位、日内/隔夜拆解）、`analysis.valuation`（PE百分位、ERP信号）、指数原始日线序列（用于图表渲染）
 
 **核心任务**:
 
-- 技术状态矩阵（MA偏离度、均线排列、量比、K线形态）
-- K线形态概率解读
-- 关键支撑/压力位（含计算依据）
-- 量价关系综合判断（区分日内/隔夜涨幅）
-- 估值水位表 + ERP 股债性价比
-- 三情景预判（概率之和=100%，各附可观测触发条件）
+- **直接使用** `analysis.technical[指数].ma_arrangement`、`ma_deviations`、`kline_pattern` 输出技术矩阵
+- **直接使用** `analysis.technical[指数].supports/resistances` 列出支撑/压力位（已附计算依据）
+- **直接使用** `analysis.valuation.erp.erp_signal` 输出 ERP 信号
+- **直接使用** `analysis.valuation.index_pe[指数].pe_zone` 输出估值水位档位
+- 基于以上量化锚点，构建三情景概率判断（概率之和=100%，各附可观测触发条件）
 - 历史镜像匹配 + 上期预判回顾
 
 **输出**: JSON（结构见 analysis-framework.md「Subagent C」节）
@@ -164,25 +191,25 @@ HTML 设计规范详见 → `references/html-design-spec.md`
 
 ### 可视化清单（强制要求）
 
-| 模块 | 图表 | 引擎 | 尺寸 | 交互 |
-|------|------|------|------|------|
-| M1 | 事件定价状态徽章表 | CSS badge | — | — |
-| M1 | 外盘市场胶囊行 | CSS pill | — | — |
-| M2 | 综合情绪仪表盘（大） + 散户/机构仪表盘（小×2） | ECharts gauge | 350px / 220px | tooltip |
-| M2 | 5日情绪折线（含markArea过热区） | ECharts line | 200px mini | hover |
-| M2 | 分项评分进度条表 | CSS | — | — |
-| M3 | 行业涨跌幅横向条形图（全行业排序） | ECharts bar | tall 460px | dataZoom+tooltip |
-| M3 | 轮动5阶段进度条（含脉冲动画） | CSS | — | — |
-| M3 | 涨停生态雷达图 | ECharts radar | half 280px | tooltip |
-| M4 | 资金结构分组柱状图（四类资金） | ECharts bar | full 380px | tooltip |
-| M4 | 主力资金30日走势折线 | ECharts line | mini 200px | hover |
-| M4 | 资金迁移桑基图 | ECharts sankey | full 380px | emphasis adjacency |
-| M5 | K线图（60日，含MA5/20/60+量能附图，Tab切换三指数） | ECharts candlestick | tall 460px | dataZoom+tab |
-| M5 | 多指数PE百分位彩色轨道（4条） | CSS | — | hover data-pct |
-| M5 | ERP双轴折线（近2年） | ECharts line | full 380px | tooltip markLine |
-| M6 | 三情景概率分段条 | CSS | 44px | — |
-| M6 | 情景卡片accordion（3张可展开） | HTML/CSS/JS | — | click toggle |
-| M6 | 观测清单交互表（优先级badge） | CSS badge+table | — | — |
+| 模块 | 图表                                               | 引擎                | 尺寸          | 交互               |
+| ---- | -------------------------------------------------- | ------------------- | ------------- | ------------------ |
+| M1   | 事件定价状态徽章表                                 | CSS badge           | —             | —                  |
+| M1   | 外盘市场胶囊行                                     | CSS pill            | —             | —                  |
+| M2   | 综合情绪仪表盘（大） + 散户/机构仪表盘（小×2）     | ECharts gauge       | 350px / 220px | tooltip            |
+| M2   | 5日情绪折线（含markArea过热区）                    | ECharts line        | 200px mini    | hover              |
+| M2   | 分项评分进度条表                                   | CSS                 | —             | —                  |
+| M3   | 行业涨跌幅横向条形图（全行业排序）                 | ECharts bar         | tall 460px    | dataZoom+tooltip   |
+| M3   | 轮动5阶段进度条（含脉冲动画）                      | CSS                 | —             | —                  |
+| M3   | 涨停生态雷达图                                     | ECharts radar       | half 280px    | tooltip            |
+| M4   | 资金结构分组柱状图（四类资金）                     | ECharts bar         | full 380px    | tooltip            |
+| M4   | 主力资金30日走势折线                               | ECharts line        | mini 200px    | hover              |
+| M4   | 资金迁移桑基图                                     | ECharts sankey      | full 380px    | emphasis adjacency |
+| M5   | K线图（60日，含MA5/20/60+量能附图，Tab切换三指数） | ECharts candlestick | tall 460px    | dataZoom+tab       |
+| M5   | 多指数PE百分位彩色轨道（4条）                      | CSS                 | —             | hover data-pct     |
+| M5   | ERP双轴折线（近2年）                               | ECharts line        | full 380px    | tooltip markLine   |
+| M6   | 三情景概率分段条                                   | CSS                 | 44px          | —                  |
+| M6   | 情景卡片accordion（3张可展开）                     | HTML/CSS/JS         | —             | click toggle       |
+| M6   | 观测清单交互表（优先级badge）                      | CSS badge+table     | —             | —                  |
 
 **原则**：每个模块至少含 **2个** 可视化组件（图表或交互组件），禁止出现纯文字罗列的模块。
 
@@ -195,7 +222,9 @@ assets/market-debrief-YYYY-MM-DD.html
 ```
 
 > 每日产出统一存放于 `assets/`：
+>
 > - `assets/market_data_YYYY-MM-DD.json` — 原始行情数据
+> - `assets/analysis_YYYY-MM-DD.json` — 量化指标分析结果（新）
 > - `assets/news_data_YYYY-MM-DD.json` — 新闻搜索结果
 > - `assets/market-debrief-YYYY-MM-DD.html` — 最终日报
 
@@ -244,6 +273,7 @@ assets/market-debrief-YYYY-MM-DD.html
 2. **若存在失败项**：列出具体失败内容，例如：
 
    > ⚠️ 本期数据采集部分失败，以下内容未能获取，相关模块分析准确度可能受影响：
+   >
    > - **行情数据**：龙虎榜（lhb）、指数PE（index pe）
    > - **新闻查询**：2/4 个查询无有效返回
 
@@ -261,9 +291,10 @@ assets/market-debrief-YYYY-MM-DD.html
 
 ## 脚本索引
 
-| 脚本                           | 用途                            |
-| ------------------------------ | ------------------------------- |
-| `scripts/fetch_market_data.py` | AkShare 行情数据一键采集 → JSON |
-| `scripts/search_news.sh`       | Tavily 新闻搜索 → JSON          |
+| 脚本                           | 用途                                          | 依赖              |
+| ------------------------------ | --------------------------------------------- | ----------------- |
+| `scripts/fetch_market_data.py` | AkShare 行情原始数据一键采集 → JSON           | akshare, pandas   |
+| `scripts/analyze_market.py`    | 量化指标计算引擎：情绪/技术/估值/行业/资金 → JSON | numpy, pandas  |
+| `scripts/search_news.sh`       | Tavily 新闻搜索 → JSON                        | jq, curl, Tavily  |
 
-依赖：`pip install akshare pandas`（Python）、`jq` + `curl`（Bash）、Tavily API token（可选）
+依赖安装：`pip install akshare numpy pandas`、`jq` + `curl`（Bash）、Tavily API token（可选）

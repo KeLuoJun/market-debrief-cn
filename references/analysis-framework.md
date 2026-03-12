@@ -383,11 +383,23 @@ ERP = 沪深300股息率 - 10年期国债收益率
 
 ## Subagent 分工与输出格式
 
+> **重要**：主协调 Agent 会提供 `analysis_YYYY-MM-DD.json`（由 `analyze_market.py` 预计算）。
+> Subagent 应**优先使用**其中已计算好的量化值，无需重跑相同计算。
+> 下方「接收数据」标注了应优先读取的 analysis.json 字段路径。
+
 ### Subagent A: 宏观事件解读师 × 情绪量化分析师
 
 **负责模块**: Module 1 + Module 2
 
-**接收数据**: tavily 新闻、北向资金、成交额历史、涨跌停数据、两融余额、换手率、超大单数据
+**接收数据**:
+- `analysis.sentiment`：情绪综合分、散户分、机构分、各分项得分、divergence_type、60日成交额百分位
+- `analysis.northbound`：当日净额（亿）、趋势描述、20日序列
+- `market_data`（原始）：涨跌停原始数量、两融余额序列、tavily 新闻
+
+**Subagent A 使用规则**：
+- `composite_score` 直接填入输出 JSON，注明「由 analyze_market.py 计算」
+- `divergence_type` 直接使用，但必须补充**行为推断**（谁在减仓、谁在加仓）
+- 若 `analysis.json` 不存在，则按 analysis-framework.md 中的公式手动计算
 
 **输出 JSON 结构**:
 ```json
@@ -422,7 +434,16 @@ ERP = 沪深300股息率 - 10年期国债收益率
 
 **负责模块**: Module 3 + Module 4
 
-**接收数据**: 行业涨跌幅、行业净流入、超大/大/中/小单数据、涨停数据、龙虎榜
+**接收数据**:
+- `analysis.industry`：heatmap（四分类）、style（成长/价值均涨幅差）、fund_flow_top3_inflow/outflow、migration_type
+- `analysis.limit_up_ecology`：zt_count、seal_rate_pct、consecutive_distribution、profit_effect、theme_concentration
+- `analysis.fund_structure`：behavior_type、super_large_net_yi、institutional_direction、retail_direction
+- `market_data.lhb`（原始）：龙虎榜席位原始数据
+
+**Subagent B 使用规则**：
+- `industry_heatmap` 直接从 `analysis.industry.heatmap` 读取，无需重分类
+- `seal_rate`、`profit_effect` 直接从 `analysis.limit_up_ecology` 填入
+- `behavior_type` 直接使用，但必须补充**龙虎榜席位解读**（游资/机构/量化席位判断）
 
 **输出 JSON 结构**:
 ```json
@@ -464,7 +485,16 @@ ERP = 沪深300股息率 - 10年期国债收益率
 
 **负责模块**: Module 5 + Module 6
 
-**接收数据**: 指数收盘价序列（近250日）、成交量序列、PE/PB百分位、国债收益率
+**接收数据**:
+- `analysis.technical`：各指数 MA 值/偏离度、均线排列、量比、K线形态（name/probability_hint/explanation）、支撑/压力位列表（含 type/level/distance_pct）、overnight_chg_pct/intraday_chg_pct
+- `analysis.valuation`：index_pe（各指数 current_pe/pe_percentile_60d/pe_zone）、all_a_pb、erp（erp_pct/erp_signal/bond_yield_10y_pct）
+- `market_data.index_daily`（原始）：近250日日线序列，用于 ECharts K线图渲染
+
+**Subagent C 使用规则**：
+- **直接引用** `analysis.technical[指数].ma` 中的具体点位填入技术矩阵，禁止凭空估算
+- **直接引用** `analysis.technical[指数].supports` 的前3条作为支撑位（已包含计算依据）
+- **直接引用** `analysis.valuation.erp.erp_signal` 作为 ERP 判断结论
+- K线形态的 `probability_hint` 直接作为「历史统计参考」填写
 
 **输出 JSON 结构**:
 ```json
