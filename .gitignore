@@ -1,5 +1,4 @@
 # Assets files - 每日生成的数据（按日期组织）
-assets/
 *.json
 !references/**/*.json
 
@@ -16,5 +15,6 @@ venv/
 # IDE
 .vscode/
 .idea/
+.claude
 
 skills/

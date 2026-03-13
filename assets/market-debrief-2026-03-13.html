@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A股深度日报 - 2026-03-13</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  :root {
+    --bg-page: #FAF7F2;
+    --bg-card: #FFFFFF;
+    --bg-header: #1C0F08;
+    --text-main: #2D2D2D;
+    --text-muted: #666666;
+    --text-on-dark: #FAF7F2;
+    --text-on-dark-secondary: rgba(250,247,242,0.6);
+    --border-light: rgba(0,0,0,0.06);
+    --border-medium: rgba(0,0,0,0.12);
+    --up-color: #C0392B;
+    --down-color: #1A2E3E;
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.04);
+    --shadow-lg: 0 4px 16px rgba(0,0,0,0.08);
+    --font-serif: "Georgia", "Noto Serif SC", "PingFang SC", serif;
+    --font-mono: "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  
+  body {
+    background-color: var(--bg-page);
+    color: var(--text-main);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    padding: 40px;
+    max-width: 1100px;
+    margin: 0 auto;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  h1, h2, h3, .insight-block {
+    font-family: var(--font-serif);
+  }
+
+  .num {
+    font-family: var(--font-mono);
+  }
+
+  .up { color: var(--up-color); }
+  .down { color: var(--down-color); }
+
+  /* Dashboard */
+  .dashboard-strip {
+    background: linear-gradient(135deg, var(--bg-header) 0%, #2C1810 100%);
+    color: var(--text-on-dark);
+    padding: 30px 30px 24px;
+    border-radius: 22px;
+    margin-bottom: 36px;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .dashboard-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 18px;
+    align-items: start;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(250,247,242,0.15);
+  }
+
+  .dashboard-label { font-size: 13px; opacity: 0.55; margin-right: 12px; }
+  .dashboard-date { font-size: 13px; opacity: 0.55; }
+  .dashboard-headline {
+    font-size: 16px; font-weight: 600; color: #F0C75E;
+    max-width: 420px; text-align: right;
+  }
+
+  .index-row {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .index-card {
+    min-height: 96px;
+    padding: 14px 12px 12px;
+    text-align: left;
+    border: 1px solid rgba(250,247,242,0.1);
+    border-radius: 14px;
+    background: rgba(255,255,255,0.04);
+  }
+
+  .idx-name { display: block; font-size: 11px; color: var(--text-on-dark-secondary); margin-bottom: 4px; }
+  .idx-val { display: block; font-size: 20px; font-weight: 700; line-height: 1.15; }
+  .idx-chg { display: block; font-size: 13px; margin-top: 2px; }
+
+  .index-card.up .idx-chg { color: #E05555; }
+  .index-card.down .idx-chg { color: #6FB3FF; } /* custom down for dark bg */
+
+  .dashboard-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    padding: 16px 20px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 12px;
+  }
+
+  .stat-item { display: flex; flex-direction: column; gap: 4px; }
+  .stat-label { font-size: 11px; color: var(--text-on-dark-secondary); }
+  .stat-value { font-size: 16px; font-weight: 600; color: #fff; }
+  .stat-sub { font-size: 11px; opacity: 0.5; }
+
+  .thermo-bar {
+    height: 4px; width: 100%;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    margin: 4px 0;
+  }
+  .thermo-fill {
+    height: 100%; border-radius: 2px; background: #E05555; /* Neutral/Hot */
+  }
+
+  /* Modules */
+  .module {
+    background: var(--bg-card);
+    border: 1px solid var(--border-medium);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 32px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .module-title {
+    font-size: 22px;
+    color: var(--bg-header);
+    margin: 0 0 20px 0;
+    border-bottom: 2px solid var(--border-light);
+    padding-bottom: 12px;
+  }
+
+  .insight-block {
+    background-color: var(--bg-page);
+    border-left: 4px solid var(--up-color);
+    padding: 16px 24px;
+    font-size: 15px;
+    color: #4A4A4A;
+    border-radius: 0 8px 8px 0;
+    margin-top: 16px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .insight-block p {
+    margin: 0 0 10px 0;
+  }
+  .insight-block p:last-child {
+    margin: 0;
+  }
+
+  /* Two and Three Col Grid */
+  .three-col {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: 24px 0;
+  }
+  .two-col {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 24px 0;
+  }
+  
+  .chart-frame {
+    width: 100%;
+    background: var(--bg-page);
+    border-radius: 12px;
+    padding: 16px;
+    box-sizing: border-box;
+    border: 1px dashed var(--border-medium);
+  }
+  .chart-title {
+    font-size: 14px; font-weight: 600; text-align: center; margin-bottom: 12px;
+  }
+
+  @media (max-width: 900px) {
+    .index-row { grid-template-columns: repeat(2, 1fr); }
+    .dashboard-stats, .three-col, .two-col { grid-template-columns: 1fr; }
+    body { padding: 16px; }
+  }
+
+  /* Badges & Tables */
+  .badge {
+    display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 12px;
+    background: #E8E8E8; color: #333; margin-right: 6px; margin-bottom: 6px;
+  }
+  .badge.hot { background: #FDE8E8; color: var(--up-color); border: 1px solid #FBC4C4; }
+  .badge.cold { background: #E8F0FE; color: var(--down-color); border: 1px solid #C3D5FF; }
+
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th, td { border-bottom: 1px solid var(--border-light); padding: 10px; text-align: left; }
+  th { font-size: 12px; color: var(--text-muted); font-weight: normal; }
+
+</style>
+</head>
+<body>
+
+<!-- Dashboard -->
+<header class="dashboard-strip">
+  <div class="dashboard-top">
+    <div class="dashboard-brand">
+      <span class="dashboard-label">A股深度日报</span>
+      <span class="dashboard-date">2026年03月13日 星期五</span>
+    </div>
+    <div class="dashboard-headline">市场情绪中性博弈，价值占优而成长承压</div>
+  </div>
+
+  <div class="index-row">
+    <div class="index-card down">
+      <span class="idx-name">上证指数</span>
+      <span class="idx-val num">4095.45</span>
+      <span class="idx-chg num down">-0.81%</span>
+    </div>
+    <div class="index-card down">
+      <span class="idx-name">深证成指</span>
+      <span class="idx-val num">14280.78</span>
+      <span class="idx-chg num down">-0.65%</span>
+    </div>
+    <div class="index-card down">
+      <span class="idx-name">创业板指</span>
+      <span class="idx-val num">3310.28</span>
+      <span class="idx-chg num down">-0.22%</span>
+    </div>
+    <div class="index-card down">
+      <span class="idx-name">科创50</span>
+      <span class="idx-val num">1373.64</span>
+      <span class="idx-chg num down">-0.72%</span>
+    </div>
+    <div class="index-card down">
+      <span class="idx-name">沪深300</span>
+      <span class="idx-val num">4669.14</span>
+      <span class="idx-chg num down">-0.39%</span>
+    </div>
+    <div class="index-card down">
+      <span class="idx-name">中证500</span>
+      <span class="idx-val num">8239.80</span>
+      <span class="idx-chg num down">-1.43%</span>
+    </div>
+  </div>
+
+  <div class="dashboard-stats">
+    <div class="stat-item">
+      <span class="stat-label">成交额 (环比放量)</span>
+      <span class="stat-value num">7920 亿</span>
+      <span class="stat-sub">20日均值的 <span class="num">1.19</span> 倍</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">情绪综合分</span>
+      <div class="thermo-bar">
+        <div class="thermo-fill" style="width:55.3%; background:#F0C75E;"></div>
+      </div>
+      <span class="stat-value num">55.3/100</span>
+      <span class="stat-sub">散户热(72.4) 机构冷(40.0)</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">涨停/跌停</span>
+      <div><span class="stat-value num up">59</span> / <span class="stat-value num down">13</span></div>
+      <span class="stat-sub">封板率 76.6%</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">北向净额</span>
+      <span class="stat-value num">0.00 亿</span>
+      <span class="stat-sub">超大单净流入 <span class="num down">-356 亿</span></span>
+    </div>
+  </div>
+</header>
+<blockquote>
+  ⚠️ <strong>风险提示</strong>：部分数据源（如龙虎榜数据、北向实时净额）因节假日效应或接口限流原因今日无变动，部分结构性分析将依赖主力及行业流向平替分析。
+</blockquote>
+
+<!-- Module 1 -->
+<section class="module">
+  <h2 class="module-title">宏观定价扫描：通胀预期升温，价值行情主权巩固</h2>
+  
+  <div class="insight-block">
+    <p><strong>预期差框架：资源品对冲经济斜率走弱的定价逻辑。</strong> 市场原预期流动性宽松将引导成长风格，如MLF/LPR下降预期。但今日新增信息在于<strong>国际油价大涨推升通胀预期，叠加部分券商报告强调提高名义GDP增速</strong>，盘面反应极其明确：以基建类（流入逾20亿）和基础化工（如氮肥/复合肥）为代表的价值板块延续强势，防守属性资产ETF（如黄金ETF）明显吸金。</p>
+    <p><strong>结论验证：</strong>成长方向大幅流出（计算机流出139亿），散户热追踪化工风电，而机构总体冷静，体现经典通胀防御博弈。明日验证点：关注商品价格中枢是否企稳以及北向资金在传统板块的连续性买入能否维持。</p>
+  </div>
+  
+  <div class="two-col">
+    <div>
+      <h4>关键事件定价</h4>
+      <span class="badge hot">定价充分</span> 国际油价拉升通胀链<br><br>
+      <span class="badge cold">定价未充分</span> 化工/基建主线政策发酵<br><br>
+      <span class="badge">反向定价</span> 科技成长获利回吐
+    </div>
+    <div>
+      <h4>外盘映射</h4>
+      <span class="badge hot">黄金ETF创记录流入</span>
+      <span class="badge hot">全球大宗周期品全线走高</span>
+    </div>
+  </div>
+</section>
+
+<!-- Module 2 -->
+<section class="module">
+  <h2 class="module-title">市场情绪温度计：散户机构分歧加剧，成交温和放量</h2>
+  
+  <div class="insight-block">
+    <p>当前市场情绪综合分为 <span class="num">55.3</span>，相较昨日走平。核心特征在于<strong>“散户热而机构冷”</strong>（散户情绪72.4 vs 机构情绪40.0）。成交额 <span class="num">7920</span> 亿虽然较历史高位回落，但处于60日周期的相对高分位（94.2%），并呈现 <span class="num">7.9%</span> 的温和放量斜率。这说明市场在高位呈现筹码互换，超大单持续抛售的情况下，游资与散户正在结构性行情（如封板率达76.6%但也仅1连板）中维持短期热度。</p>
+  </div>
+
+  <div class="two-col">
+    <div class="chart-frame">
+      <div class="chart-title">综合情绪分布 (0-100)</div>
+      <div id="m2-gauge" style="width:100%; height:250px;"></div>
+    </div>
+    <div>
+      <table>
+        <tr><th>核心指标</th><th>评分</th><th>状态说明</th></tr>
+        <tr><td>赚钱效应比</td><td><span class="num up">82.3</span></td><td>涨跌停比4.54，局部活跃</td></tr>
+        <tr><td>连板生态</td><td><span class="num down">30.0</span></td><td>最高仅1连板，接力断层</td></tr>
+        <tr><td>量能支持</td><td><span class="num up">65.6</span></td><td>较20日均线上浮19%</td></tr>
+        <tr><td>市场广度</td><td><span class="num down">10.0</span></td><td>仅27.4%个股上涨，亏钱效应蔓延</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- Module 3 -->
+<section class="module">
+  <h2 class="module-title">板块结构性分析：科技成长退潮，基建化工作壁上观</h2>
+  
+  <div class="insight-block">
+    <p>全天市场呈现<strong>“价值占优”</strong>的格局，价值风格平均跌幅（-0.28%）明显窄于成长风格（-1.80%），价差高达 <span class="num">-1.52%</span>。在昨日新闻渲染外盘半导体大涨的情形下，今日计算机和半导体反而遭到暴力减仓，计算机主力净流出 <span class="num">139.77亿</span>，有色金属因美联储与大宗逻辑摇摆流出 <span class="num">123.94亿</span>。</p>
+    <p>【风险提示：情绪高潮但主力资金背离】传媒和科技方向存在明显的获利盘兑现，资金全面向防守与逆周期底仓倾斜。以基建市政工程、基础建设为首的方向吸收了主要的净流入（均在20亿级别），化工中的细分（卫浴/氮肥）逆势走高。</p>
+  </div>
+
+  <div class="two-col">
+    <div class="chart-frame">
+      <div class="chart-title">领涨与领跌行业 (单位：%)</div>
+      <div id="m3-bar" style="width:100%; height:300px;"></div>
+    </div>
+    <div class="chart-frame">
+      <div class="chart-title">涨停生态分布</div>
+      <div id="m3-radar" style="width:100%; height:300px;"></div>
+    </div>
+  </div>
+</section>
+
+<!-- Module 4 -->
+<section class="module">
+  <h2 class="module-title">资金路线图：超大单暴力流出，资金迁移防守化</h2>
+  
+  <div class="insight-block">
+    <p>超大单全天合计呈巨幅净流出状态（<span class="num">-356.39亿</span>），北向资金动态平稳。主力的抛售主要集中在高景气度的成长赛道。结合行情数据，今天是一个典型的资金从“高估值预期板块”流向“低估值传统周期”的避险迁移日。</p>
+  </div>
+  
+  <div class="two-col">
+    <div class="chart-frame">
+       <div class="chart-title">资金净流入/流出 TOP3 (单位：亿元)</div>
+       <div id="m4-bar" style="width:100%; height:260px;"></div>
+    </div>
+    <div>
+        <table style="margin-top: 50px;">
+          <tr><th>资金性质</th><th>日内行为</th><th>结论</th></tr>
+          <tr><td>超大单</td><td><span class="num down">-356.39 亿</span></td><td>机构避险与出逃</td></tr>
+          <tr><td>散户</td><td>承接与局部风电炒作</td><td>短线买力偏强</td></tr>
+          <tr><td>北向资金</td><td>无明显异动</td><td>观望为主</td></tr>
+        </table>
+    </div>
+  </div>
+</section>
+
+<!-- Module 5 -->
+<section class="module">
+  <h2 class="module-title">技术形态与估值：均线系统多头排列，但估值高悬预警</h2>
+  
+  <div class="insight-block">
+    <p>技术面上，上证指数与深证成指均维持在中期<strong>多头排列</strong>格型中，沪指跌0.81%收长上影十字星，量价平稳。当前第一重支撑在 MA60 的 <span class="num">4057.52</span>（距离现价 -0.93%）。</p>
+    <p>但【风险提示】所有主流大盘指数（沪深300、中证500/1000等）的 PE 均处于60日百分位的 100% 水平。此外，全A ERP目前下探至 <span class="num">2.656%</span>（低于60日均值一倍标准差），债券性价比显著优于股市，预示股指上攻动力受估值天花板压制，回调压力骤增。</p>
+  </div>
+
+  <div class="three-col">
+    <div class="chart-frame">
+      <div class="chart-title">沪指关键支撑压力位</div>
+      <table style="margin-top: 10px;">
+          <tr><th>点位</th><th>类型</th><th>距离现价</th></tr>
+          <tr style="color:var(--down-color)"><td>4119.41</td><td>VWAP30</td><td>+0.59%</td></tr>
+          <tr style="color:var(--up-color)"><td>4057.52</td><td>MA60</td><td>-0.93%</td></tr>
+          <tr style="color:var(--up-color)"><td>4051.54</td><td>Fib 38.2%</td><td>-1.07%</td></tr>
+          <tr style="color:var(--up-color)"><td>4000.00</td><td>整数关口</td><td>-2.33%</td></tr>
+      </table>
+    </div>
+    <div class="chart-frame" style="grid-column: span 2;">
+       <div class="chart-title">股指 PE 分位与 ERP（估值红线预警）</div>
+       <table style="margin-top:20px;">
+        <tr><th>指数</th><th>当前PE</th><th>60日百分位</th><th>估值水位判断</th></tr>
+        <tr><td>沪深300</td><td>22.37</td><td class="num">100%</td><td style="color:var(--down-color)">危险</td></tr>
+        <tr><td>中证500</td><td>33.82</td><td class="num">100%</td><td style="color:var(--down-color)">危险</td></tr>
+        <tr><td>全A ERP</td><td>2.656%</td><td class="num">低于均值 -1σ</td><td>债优于股</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- Module 6 -->
+<section class="module">
+  <h2 class="module-title">次日预判与情景规划：防守阵型重构，3日内回调概率六成</h2>
+
+  <div class="insight-block">
+    <p>深证与创业板全日K线均收出长上影，实体部分极小且上影约为实体的两倍，上档抛压巨大，统计数据显示其3日内回调验证概率高达约65%。配合超大主力高达 356亿 的流出现场，市场在交易什么：宏观面缺乏进一步货币刺激空间，且资金对科技龙头出表避险。</p>
+    <p><strong>核心验证点：</strong>明日需关注沪指在4050附近的承接力，若能依托价值股护盘，上证有望构建宽幅震荡。若成长持续缩量，风险将继续暴露。</p>
+  </div>
+
+  <div class="two-col">
+    <div style="background:#fff; padding:20px; border-radius:12px; border:1px solid #E8E8E8;">
+      <h3 style="margin-top:0;">核心情景（60%）：震荡整理与风格极化</h3>
+      <p style="font-size:13px; color:#666;"><strong>叙事验证：</strong>基建/化工维系大盘重心，题材接力断板。<br><strong>观察点：</strong>沪指 4050 点 MA60 支撑强度；价值股与红利 ETF 继续领涨。</p>
+      <p style="font-size:13px; color:#666;"><strong>证伪条件：</strong>北向重新大额买入成长赛道或成交量重回万亿。</p>
+    </div>
+    <div style="background:#fff; padding:20px; border-radius:12px; border:1px solid #E8E8E8;">
+      <h3 style="margin-top:0;">悲观情景（30%）：跌破共识防线</h3>
+      <p style="font-size:13px; color:#666;"><strong>叙事验证：</strong>高估值板块踩踏出逃。<br><strong>观察点：</strong>放量跌破 MA60，盘中连续两波恐慌性涌出，超大单净流出继续超300亿。</p>
+      <p style="font-size:13px; color:#666;"><strong>证伪条件：</strong>外盘突发重大利好或出现GJD长腿护盘。</p>
+    </div>
+  </div>
+</section>
+
+<div style="text-align:center; padding: 20px; color:#999; font-size:12px;">
+  <p>免责声明：本报告由智能引擎自动生成，数据源依赖客观采集（AkShare & Tavily）。<br>内容仅供逻辑推演与量化追踪之用，不构成任何直接投资建议。市场有风险，投资需谨慎。</p>
+</div>
+
+<script>
+  // M2 Gauge
+  var m2Gauge = echarts.init(document.getElementById('m2-gauge'));
+  m2Gauge.setOption({
+    tooltip: { formatter: '{a} <br/>{b} : {c}' },
+    series: [{
+      name: '情绪分',
+      type: 'gauge',
+      progress: { show: true, width: 10, itemStyle: { color: '#F0C75E'} },
+      axisLine: { lineStyle: { width: 10 } },
+      axisTick: { show: false },
+      splitLine: { length: 15, lineStyle: { width: 2, color: '#999' } },
+      detail: { valueAnimation: true, formatter: '{value}', fontSize: 20 },
+      data: [{ value: 55.3, name: '中性博弈' }]
+    }]
+  });
+
+  // M3 Bar
+  var m3Bar = echarts.init(document.getElementById('m3-bar'));
+  m3Bar.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: '15%', right: '10%', bottom: '15%', top: '10%' },
+    xAxis: { type: 'value', name: '涨跌幅(%)' },
+    yAxis: { type: 'category', data: ['面板', '商用客车', '汽车', '旅游零售', '专用设备', '复合肥', '氮肥', '卫浴'] },
+    series: [{
+      name: '涨跌幅', type: 'bar',
+      itemStyle: { color: function(p) { return p.value > 0 ? '#C0392B' : '#1A2E3E'; } },
+      data: [-0.99, -0.93, -0.96, -0.77, -0.86, 4.34, 5.0, 6.78]
+    }]
+  });
+
+  // M3 Radar
+  var m3Radar = echarts.init(document.getElementById('m3-radar'));
+  m3Radar.setOption({
+    radar: {
+      indicator: [
+        { name: '封板率', max: 100 },
+        { name: '风电题材', max: 10 },
+        { name: '连板高度', max: 5 },
+        { name: '跌停占比', max: 20 },
+        { name: '市场广度', max: 100 }
+      ]
+    },
+    series: [{
+      name: '生态', type: 'radar',
+      data: [{ value: [76.6, 8.5, 1, 13, 27.4], name: '当前游资生态' }]
+    }]
+  });
+
+  // M4 Flow Bar
+  var m4Bar = echarts.init(document.getElementById('m4-bar'));
+  m4Bar.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: '20%', right: '10%', bottom: '15%', top: '10%' },
+    xAxis: { type: 'value', name: '净流入(亿)' },
+    yAxis: { type: 'category', data: ['计算机', '有色金属', '电力设备', '建筑装饰', '基础建设', '市政工程'] },
+    series: [{
+      name: '主力资金', type: 'bar',
+      itemStyle: { color: function(p) { return p.value > 0 ? '#C0392B' : '#1A2E3E'; } },
+      data: [-139.77, -123.94, -87.36, 19.14, 19.69, 23.91]
+    }]
+  });
+
+  window.addEventListener('resize', function(){
+    m2Gauge.resize();
+    m3Bar.resize();
+    m3Radar.resize();
+    m4Bar.resize();
+  });
+</script>
+</body>
+</html>
