@@ -18,6 +18,9 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
+SKILL_ROOT = Path(__file__).resolve().parent.parent
+ASSETS_DIR = SKILL_ROOT / "assets"
+
 try:
     import akshare as ak
     import pandas as pd
@@ -135,20 +138,25 @@ def fetch_market_fund_flow():
 
 
 def fetch_sector_fund_flow():
-    """行业资金流向排名"""
+    """行业资金流向排名 & 涨跌幅数据 (替代 unreliable stock_board_industry_name_em)"""
+    # 获取全部行业板块资金流向，包含涨跌幅
     df = safe_call(ak.stock_sector_fund_flow_rank,
                    indicator="今日", sector_type="行业资金流")
     if df is None:
         return []
+    # 确保只要有数据就全部返回，不做截断，以便后续计算行业强弱分布
     return df_to_records(df)
 
 
-def fetch_industry_board():
-    """申万行业板块行情"""
-    df = safe_call(ak.stock_board_industry_name_em)
+def fetch_lhb_institution(date_str):
+    """龙虎榜机构席位统计 (替代 unreliable stock_lhb_detail_em)"""
+    # 机构买卖每日统计
+    df = safe_call(ak.stock_lhb_jgmmtj_em,
+                   start_date=date_str, end_date=date_str)
     if df is None:
         return []
     return df_to_records(df)
+
 
 
 def fetch_limit_up(date_str):
@@ -214,12 +222,14 @@ def fetch_bond_yield(date_str):
     return df_to_records(df_gov)
 
 
-def fetch_lhb(date_str):
-    """龙虎榜详情"""
-    df = safe_call(ak.stock_lhb_detail_em,
-                   start_date=date_str, end_date=date_str)
+def fetch_lhb_top_stocks(date_str):
+    """龙虎榜个股上榜统计 (补充)"""
+    df = safe_call(ak.stock_lhb_stock_statistic_em, date=date_str)
     if df is None:
         return []
+    # 按净买入额排序取前20
+    if "净买入额" in df.columns:
+        df = df.sort_values("净买入额", ascending=False).head(20)
     return df_to_records(df)
 
 
@@ -256,11 +266,10 @@ def collect_all(date_str):
     print("[4/11] 拉取全市场资金流向...", file=sys.stderr)
     data["market_fund_flow"] = fetch_market_fund_flow()
 
-    print("[5/11] 拉取行业资金流向...", file=sys.stderr)
+    print("[5/11] 拉取行业资金流向(含涨跌幅)...", file=sys.stderr)
     data["sector_fund_flow"] = fetch_sector_fund_flow()
 
-    print("[6/11] 拉取行业板块行情...", file=sys.stderr)
-    data["industry_board"] = fetch_industry_board()
+    # 移除 data["industry_board"]，改用 sector_fund_flow 替代其功能
 
     print("[7/11] 拉取涨跌停数据...", file=sys.stderr)
     data["limit_up"] = fetch_limit_up(date_str)
@@ -277,6 +286,9 @@ def collect_all(date_str):
     print("[10/11] 拉取国债收益率...", file=sys.stderr)
     data["bond_yield"] = fetch_bond_yield(date_str)
 
+    print("[11/11] 拉取龙虎榜(机构/个股)...", file=sys.stderr)
+    data["lhb_jgmmtj"] = fetch_lhb_institution(date_str)
+    data["lhb_stocks"] = fetch_lhb_top_stocks
     print("[11/11] 拉取龙虎榜...", file=sys.stderr)
     data["lhb"] = fetch_lhb(date_str)
 
@@ -291,18 +303,18 @@ def main():
     parser = argparse.ArgumentParser(description="A股日报数据采集")
     parser.add_argument("--date", help="目标日期 YYYYMMDD（默认最近交易日）")
     parser.add_argument("--output", "-o",
-                        help="输出文件路径（默认 assets/market_data_YYYY-MM-DD.json）")
+                        help="输出文件路径（默认写入 skill 目录下 assets/market_data_YYYY-MM-DD.json）")
     args = parser.parse_args()
 
     date_str = get_latest_trade_date(args.date)
     data = collect_all(date_str)
 
-    # 默认写入 assets/ 目录，文件名包含日期
+    # 默认写入 skill 目录下 assets/，文件名包含日期
     if args.output:
         output_path = Path(args.output)
     else:
         date_fmt = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
-        output_path = Path("assets") / f"market_data_{date_fmt}.json"
+        output_path = ASSETS_DIR / f"market_data_{date_fmt}.json"
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     json_str = json.dumps(data, ensure_ascii=False, indent=2, default=str)

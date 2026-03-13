@@ -21,6 +21,14 @@ Phase 2: 三个 Subagent 并行分析
 Phase 3: 渲染 Agent 整合输出 HTML
 ```
 
+## 路径约定（强制）
+
+- `SKILL_ROOT`：market-debrief-cn skill 目录（即当前 `SKILL.md` 所在目录）
+- `ASSETS_DIR`：`SKILL_ROOT/assets`（所有 JSON 中间产物固定写这里）
+- `PROJECT_ROOT`：本次运行 skill 的项目根目录（最终 HTML 固定写这里）
+
+不允许把 HTML 写入 `ASSETS_DIR`，也不允许把 JSON 中间产物写入 `PROJECT_ROOT`。
+
 ---
 
 ## Phase 1: 数据采集（主协调 Agent）
@@ -42,7 +50,7 @@ python scripts/fetch_market_data.py --date YYYYMMDD
 - 涨停池/跌停池/炸板池/强势连板股
 - 北向资金、两融余额、国债收益率、龙虎榜
 
-脚本**自动写入** `assets/market_data_YYYY-MM-DD.json`（assets/ 目录不存在时自动创建）。
+脚本**自动写入** `SKILL_ROOT/assets/market_data_YYYY-MM-DD.json`（目录不存在时自动创建）。
 
 ⚠️ 东方财富数据源偶尔限流导致个别接口失败（返回空数组）——脚本已内置容错，失败项会在 stderr 显示 `[WARN]`，并记录在输出 JSON 的 `_failed_items` 字段中。若关键数据缺失，可等待 10 秒后重跑。
 
@@ -62,7 +70,7 @@ python scripts/search_news.py --date YYYY-MM-DD
 bash scripts/search_news.sh '{"date": "YYYY-MM-DD"}'
 ```
 
-两个脚本输出格式完全相同，**自动写入** `assets/news_data_YYYY-MM-DD.json`，失败的查询记录在 `_failed_queries` 字段。
+两个脚本输出格式完全相同，**自动写入** `SKILL_ROOT/assets/news_data_YYYY-MM-DD.json`，失败的查询记录在 `_failed_queries` 字段。
 
 ⚠️ 需要 Tavily API token。优先级：`TAVILY_API_KEY` 环境变量（支持 `tvly-...` 格式）→ `~/.mcp-auth/` JWT 缓存。若两者均不可用，脚本会报错退出——必须先解决认证问题再继续（见 Step 4 双源要求）。
 
@@ -74,7 +82,7 @@ bash scripts/search_news.sh '{"date": "YYYY-MM-DD"}'
 python scripts/analyze_market.py --date YYYYMMDD
 ```
 
-脚本**自动写入** `assets/analysis_YYYY-MM-DD.json`，包含：
+脚本**自动写入** `SKILL_ROOT/assets/analysis_YYYY-MM-DD.json`，包含：
 
 | 模块        | 预计算内容                                                               |
 | ----------- | ------------------------------------------------------------------------ |
@@ -92,7 +100,7 @@ python scripts/analyze_market.py --date YYYYMMDD
 
 ### Step 4: 准备数据包
 
-读取 `assets/market_data_YYYY-MM-DD.json`、`assets/analysis_YYYY-MM-DD.json` 和 `assets/news_data_YYYY-MM-DD.json`，构建三个 Subagent 的数据子集。
+读取 `SKILL_ROOT/assets/market_data_YYYY-MM-DD.json`、`SKILL_ROOT/assets/analysis_YYYY-MM-DD.json` 和 `SKILL_ROOT/assets/news_data_YYYY-MM-DD.json`，构建三个 Subagent 的数据子集。
 
 **⚠️ 双源强制要求**：三个 Subagent 必须同时持有 akshare 行情数据和 tavily 新闻数据。若 `news_data` 文件不存在或为空，必须先执行 Step 3 搜索新闻，**不允许**跳过新闻采集直接进入 Phase 2。两类数据是报告深度的双支柱，缺少任一类都会导致分析仅停留在数字描述层面。
 
@@ -175,6 +183,21 @@ python scripts/analyze_market.py --date YYYYMMDD
 
 收集三份 JSON 后，交给渲染 Agent。
 
+### 深度分析指令（最高优先级）
+
+**1. 必须建立因果链条**
+禁止仅罗列“指数涨跌”或“新闻标题”。所有结论必须符合 `数据(Data) + 事件(Event) -> 归因(Attribution) -> 验证(Verification)` 的结构。
+*   ❌ 错误：今日半导体板块上涨，主力流入。
+*   ✅ 正确：半导体板块上涨3.2%，主力净流入15亿（数据），主要受昨夜英伟达财报超预期驱动（事件），确认了AI硬件端的景气度外溢（归因），需关注明日是否缩量分歧（验证）。
+
+**2. 必须使用量化锚点**
+*   **情绪**：必须引用 `composite_score` 和 `divergence`（散户/机构分歧）。
+*   **资金**：必须引用 `northbound`（北向）与 `sector_fund_flow`（内资）的背离或共振。
+*   **主力**：必须引用 `lhb_jgmmtj`（机构席位）分析“聪明钱”动向。
+
+**3. 数据失败处理**
+若 `market_data` 中存在 `_failed_items`，必须在报告开头显著位置（引用块）提示：“⚠️ 部分数据源（如龙虎榜）暂时不可用，相关模块分析可能受限”。
+
 HTML 设计规范详见 → `references/html-design-spec.md`
 
 ### 渲染要点
@@ -236,20 +259,20 @@ HTML 设计规范详见 → `references/html-design-spec.md`
 
 ### 输出文件
 
-将最终 HTML 写入**项目根目录**：
+将最终 HTML 写入**PROJECT_ROOT（运行 skill 的项目根目录）**：
 
 ```
 market-debrief-YYYY-MM-DD.html
 ```
 
-> 数据中间产物继续存放于 `assets/`，最终成品 HTML 单独放在项目根目录，便于直接预览、分享和版本比对：
+> 数据中间产物继续存放于 `SKILL_ROOT/assets/`，最终成品 HTML 单独放在 `PROJECT_ROOT`，便于直接预览、分享和版本比对：
 >
-> - `assets/market_data_YYYY-MM-DD.json` — 原始行情数据
-> - `assets/analysis_YYYY-MM-DD.json` — 量化指标分析结果（新）
-> - `assets/news_data_YYYY-MM-DD.json` — 新闻搜索结果
-> - `market-debrief-YYYY-MM-DD.html` — 最终日报
+> - `SKILL_ROOT/assets/market_data_YYYY-MM-DD.json` — 原始行情数据
+> - `SKILL_ROOT/assets/analysis_YYYY-MM-DD.json` — 量化指标分析结果（新）
+> - `SKILL_ROOT/assets/news_data_YYYY-MM-DD.json` — 新闻搜索结果
+> - `PROJECT_ROOT/market-debrief-YYYY-MM-DD.html` — 最终日报
 
-**输出动作要求**：渲染完成后，必须显式执行“写入项目根目录 HTML 文件”这一步，不允许把最终 HTML 留在 `assets/`、临时目录或对话内联代码块中。
+**输出动作要求**：渲染完成后，必须显式执行“写入 PROJECT_ROOT HTML 文件”这一步，不允许把最终 HTML 留在 `SKILL_ROOT/assets/`、临时目录或对话内联代码块中。
 
 ---
 
@@ -300,7 +323,7 @@ market-debrief-YYYY-MM-DD.html
    > - **行情数据**：龙虎榜（lhb）、指数PE（index pe）
    > - **新闻查询**：2/4 个查询无有效返回
 
-**来源**：读取 `assets/market_data_YYYY-MM-DD.json` 中的 `_failed_items` 字段，以及 `assets/news_data_YYYY-MM-DD.json` 中的 `_failed_queries` 字段。
+**来源**：读取 `SKILL_ROOT/assets/market_data_YYYY-MM-DD.json` 中的 `_failed_items` 字段，以及 `SKILL_ROOT/assets/news_data_YYYY-MM-DD.json` 中的 `_failed_queries` 字段。
 
 ---
 

@@ -33,6 +33,9 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
+SKILL_ROOT = Path(__file__).resolve().parent.parent
+ASSETS_DIR = SKILL_ROOT / "assets"
+
 try:
     import numpy as np
     import pandas as pd
@@ -575,21 +578,38 @@ def calc_industry(data: dict) -> dict:
     """
     行业强弱四分类、成长/价值风格计算、资金流向 TOP/BOTTOM 榜。
     """
-    board = to_df(data.get("industry_board", []))
-    sector_flow = to_df(data.get("sector_fund_flow", []))
+    # 优先使用 sector_fund_flow (含涨跌幅和资金流)，不再依赖 industry_board
+    board = to_df(data.get("sector_fund_flow", []))
+    # 为兼容旧代码，保留 data.get("industry_board", []) 读取，但 fetch_market_data.py 已移除该字段
+    if board.empty:
+        board = to_df(data.get("industry_board", []))
 
     result = {}
     if board.empty:
         return result
 
     # 寻找涨跌幅列
+    # stock_sector_fund_flow_rank 通常包含 "今日涨跌幅"
     chg_col = next((c for c in board.columns if "涨跌幅" in c), None)
     name_col = next(
-        (c for c in board.columns if "板块名称" in c or "行业" in c or "名称" in c), None)
+        (c for c in board.columns if "板块" in c or "行业" in c or "名称" in c), None)
+    
     if not chg_col or not name_col:
         return result
 
-    board[chg_col] = pd.to_numeric(board[chg_col], errors="coerce")
+    # 转换涨跌幅为 float (需处理 % 号)
+    def parse_chg(val):
+        if isinstance(val, (int, float)):
+            return float(val)
+        if isinstance(val, str):
+            val = val.replace("%", "")
+            try:
+                return float(val)
+            except:
+                return 0.0
+        return 0.0
+
+    board[chg_col] = board[chg_col].apply(parse_chg)
     board = board.dropna(subset=[chg_col])
 
     # 四分类
@@ -991,10 +1011,11 @@ def analyze(market_data_path: Path) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="A股日报量化分析引擎")
-    parser.add_argument("--date", help="目标日期 YYYYMMDD，自动匹配 assets/ 中的数据文件")
+    parser.add_argument(
+        "--date", help="目标日期 YYYYMMDD，自动匹配 skill 目录下 assets/ 中的数据文件")
     parser.add_argument("--input", "-i", help="直接指定 market_data JSON 文件路径")
     parser.add_argument(
-        "--output", "-o", help="输出文件路径（默认 assets/analysis_YYYY-MM-DD.json）")
+        "--output", "-o", help="输出文件路径（默认写入 skill 目录下 assets/analysis_YYYY-MM-DD.json）")
     args = parser.parse_args()
 
     # 确定输入文件
@@ -1003,13 +1024,13 @@ def main():
     elif args.date:
         d = args.date
         date_fmt = f"{d[:4]}-{d[4:6]}-{d[6:]}"
-        input_path = Path("assets") / f"market_data_{date_fmt}.json"
+        input_path = ASSETS_DIR / f"market_data_{date_fmt}.json"
     else:
-        # 自动寻找 assets/ 中最新的 market_data 文件
-        candidates = sorted(Path("assets").glob("market_data_*.json"))
+        # 自动寻找 skill 目录下 assets/ 中最新的 market_data 文件
+        candidates = sorted(ASSETS_DIR.glob("market_data_*.json"))
         if not candidates:
             print(
-                "错误: 未找到 assets/market_data_*.json 文件，请先运行 fetch_market_data.py", file=sys.stderr)
+                "错误: 未找到 skill 目录下 assets/market_data_*.json 文件，请先运行 fetch_market_data.py", file=sys.stderr)
             sys.exit(1)
         input_path = candidates[-1]
         print(f"[INFO] 自动选择最新数据文件: {input_path}", file=sys.stderr)
@@ -1025,7 +1046,7 @@ def main():
         # 从输入文件名中提取日期
         stem = input_path.stem  # e.g. market_data_2026-03-12
         date_part = stem.replace("market_data_", "")
-        output_path = Path("assets") / f"analysis_{date_part}.json"
+        output_path = ASSETS_DIR / f"analysis_{date_part}.json"
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 

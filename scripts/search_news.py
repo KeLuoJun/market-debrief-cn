@@ -23,6 +23,10 @@ except ImportError:
     sys.exit(1)
 
 
+SKILL_ROOT = Path(__file__).resolve().parent.parent
+ASSETS_DIR = SKILL_ROOT / "assets"
+
+
 # ── Token 管理 ────────────────────────────────────────────────
 
 
@@ -155,11 +159,12 @@ def main():
         help="目标日期 YYYY-MM-DD（默认今日）",
     )
     parser.add_argument("--output", default=None,
-                        help="输出文件路径（默认 assets/news_data_YYYY-MM-DD.json）")
+                        help="输出文件路径（默认写入 skill 目录下 assets/news_data_YYYY-MM-DD.json）")
     args = parser.parse_args()
 
     target_date = args.date
-    output_file = args.output or f"assets/news_data_{target_date}.json"
+    output_file = str(args.output) if args.output else str(
+        ASSETS_DIR / f"news_data_{target_date}.json")
 
     api_key, key_type = _get_api_key()
     if not api_key:
@@ -175,6 +180,10 @@ def main():
         f"A股 板块 热点 {target_date} 涨停 主线",
         f"美股 港股 隔夜 大宗商品 {target_date}",
         f"中国 宏观经济 货币政策 MLF LPR CPI PMI {target_date}",
+        # 新增深度分析类查询
+        f"{target_date} A股 机构观点 研报 策略 分析",
+        f"{target_date} 北向资金 动向 净流入 全天分析",
+        f"{target_date} A股 突发 利好 利空 消息",
     ]
 
     all_results = []

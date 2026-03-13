@@ -7,6 +7,10 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ASSETS_DIR="$SKILL_ROOT/assets"
+
 # ── Token 管理 ─────────────────────────────────────────────
 
 decode_jwt_payload() {
@@ -105,7 +109,7 @@ fi
 
 # 默认写入 assets/ 目录，文件名包含日期
 if [ -z "$OUTPUT_FILE" ]; then
-    OUTPUT_FILE="assets/news_data_${TARGET_DATE}.json"
+    OUTPUT_FILE="$ASSETS_DIR/news_data_${TARGET_DATE}.json"
 fi
 mkdir -p "$(dirname "$OUTPUT_FILE")"
 
