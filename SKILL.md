@@ -112,6 +112,8 @@ python scripts/analyze_market.py --date YYYYMMDD
 
 **所有 Subagent 的核心输出要求**：除了量化数据字段，每个模块必须输出 `analysis_text` 叙述字段（见 analysis-framework.md 各 Subagent JSON schema）。叙述字段必须双源融合——同时引用 akshare 数字和 tavily 新闻事件，推断市场参与者动机，不只描述现象。
 
+**强制要求**：Module 1 和 Module 6 必须额外输出“预期差 / 明日验证点 / 证伪条件”结构。不能只解释今天发生了什么，还必须说明：市场原先在定价什么、今天新增信息改了什么、明天看什么来证明这个判断对或错。
+
 ### Subagent A: 宏观事件解读师 × 情绪量化分析师
 
 **模块**: Module 1（宏观定价扫描）+ Module 2（市场情绪温度计）
@@ -121,6 +123,7 @@ python scripts/analyze_market.py --date YYYYMMDD
 **核心任务**:
 
 - 从新闻中筛选有效事件，判断定价完成度（已充分/未充分/过度）
+- 对最关键的 1-2 个事件补充“预期差框架”：市场原预期、今日新增信息、盘面反应、预期差判断、明日验证点、证伪条件
 - 更新宏观三维坐标（经济动能/流动性/风险偏好）
 - **直接使用** `analysis.sentiment.composite_score` 作为综合情绪分（无需重算）
 - 确认散户/机构分歧类型（使用 `analysis.sentiment.divergence_type`）
@@ -161,6 +164,7 @@ python scripts/analyze_market.py --date YYYYMMDD
 - **直接使用** `analysis.valuation.erp.erp_signal` 输出 ERP 信号
 - **直接使用** `analysis.valuation.index_pe[指数].pe_zone` 输出估值水位档位
 - 基于以上量化锚点，构建三情景概率判断（概率之和=100%，各附可观测触发条件）
+- 每个情景必须写明“它在验证哪条市场叙事”，以及“出现什么信号时该情景失效”
 - 历史镜像匹配 + 上期预判回顾
 
 **输出**: JSON（结构见 analysis-framework.md「Subagent C」节）
@@ -190,6 +194,8 @@ HTML 设计规范详见 → `references/html-design-spec.md`
 13. **响应式强制要求**：桌面端按 2-3 列信息栅格布局；当视口 < 900px 时统一降为单列，顶部指数卡改为 2 列网格，禁止 6 个指数横向挤压在一行。
 14. **视觉层次强制要求**：每个模块必须遵循「标题区 → 一句话结论 → 核心图表区 → 深度解读 → 次级表格/清单」的顺序，禁止把图表、长段落、表格随机穿插。
 15. **优先美观而非堆砌**：宁可减少一个次级组件，也要保证主图表和关键数字排版整齐、留白充足、模块高度均衡。
+16. **必须显式渲染“市场在交易什么”**：在顶部摘要区或 Module 1 中，固定展示 `module1.expectation_gap` 的主叙事摘要。
+17. **必须显式渲染“明日验证点”**：在 Module 6 的情景区中展示每个情景的 `validates` 与 `invalidation`，禁止只渲染概率和区间。
 
 ### 页面结构
 

@@ -486,6 +486,125 @@ function tip(fmt) { return {trigger:'axis',backgroundColor:C.TOOLTIP_BG,borderCo
 
 **必须包含（≥1种）**：
 
+**0.5 预期差主叙事卡（新增，强烈建议固定展示）**：
+
+> 当 `module1.expectation_gap` 存在时，优先展示第 1 条作为本页最重要的“市场在交易什么”摘要卡。它不是装饰，而是整份日报的研究主轴。
+
+```html
+<section class="thesis-card">
+  <div class="thesis-topline">
+    <span class="thesis-kicker">Market Thesis</span>
+    <span class="thesis-badge partial">局部充分</span>
+  </div>
+  <h3 class="thesis-title">市场在交易政策表述升级，但只交易了高弹性链条</h3>
+  <div class="thesis-grid">
+    <div class="thesis-col">
+      <div class="mini-label">市场原预期</div>
+      <p>[market_prior]</p>
+    </div>
+    <div class="thesis-col">
+      <div class="mini-label">今日新增信息</div>
+      <p>[new_information]</p>
+    </div>
+    <div class="thesis-col thesis-wide">
+      <div class="mini-label">盘面反应</div>
+      <p>[market_reaction]</p>
+    </div>
+  </div>
+  <div class="thesis-checks">
+    <div class="check-box">
+      <div class="mini-label">明日验证点</div>
+      <ul>[tomorrow_checks li]</ul>
+    </div>
+    <div class="check-box danger">
+      <div class="mini-label">证伪条件</div>
+      <ul>[falsifiers li]</ul>
+    </div>
+  </div>
+</section>
+```
+
+```css
+.thesis-card {
+  background: linear-gradient(135deg, #fff8f0 0%, #f7efe5 100%);
+  border: 1px solid var(--border-medium);
+  border-radius: 16px;
+  padding: 18px 20px;
+  margin: 18px 0 22px;
+  box-shadow: var(--shadow-sm);
+}
+.thesis-topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.thesis-kicker {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-warning);
+  font-weight: 700;
+}
+.thesis-title {
+  font-size: 20px;
+  line-height: 1.35;
+  margin: 0 0 14px;
+}
+.thesis-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.thesis-col,
+.check-box {
+  background: rgba(255,255,255,0.72);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.thesis-col.thesis-wide { grid-column: 1 / -1; }
+.mini-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.thesis-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.check-box ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.check-box.danger {
+  background: #fff4f2;
+  border-color: #f1c7c1;
+}
+.thesis-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.thesis-badge.underpriced { background: #eaf4ff; color: #1a5276; }
+.thesis-badge.partial { background: #fef4de; color: #7d6608; }
+.thesis-badge.overpriced { background: #fdecea; color: #922b21; }
+
+@media (max-width: 900px) {
+  .thesis-grid,
+  .thesis-checks { grid-template-columns: 1fr; }
+}
+```
+
 **① 事件定价热力表**（增强 HTML table）：
 ```html
 <!-- 事件行：状态列用色块+文字组合，不只是文字颜色 -->
@@ -779,6 +898,16 @@ Y轴左：ERP(%)，Y轴右：沪深300 PE，X轴：月度。
     </div>
     <div class="sc-body">
       <p class="sc-desc">[情景描述，含区间]</p>
+      <div class="sc-logic">
+        <div class="logic-row">
+          <span class="logic-label">验证叙事</span>
+          <span class="logic-text">[validates]</span>
+        </div>
+        <div class="logic-row invalidation">
+          <span class="logic-label">失效信号</span>
+          <ul>[invalidation li]</ul>
+        </div>
+      </div>
       <div class="sc-triggers">
         <span class="trigger-label">触发条件</span>
         <ul>[li 每条触发条件]</ul>
@@ -812,11 +941,45 @@ Y轴左：ERP(%)，Y轴右：沪深300 PE，X轴：月度。
 .sc-prob  { font-size: 20px; font-weight: 700; }
 .sc-arrow { font-size: 20px; color: var(--text-muted); transition: transform .2s; }
 .sc-body  { max-height: 0; overflow: hidden; transition: max-height .35s ease; }
-.scenario-card.open .sc-body  { max-height: 400px; }
+.scenario-card.open .sc-body  { max-height: 520px; }
 .scenario-card.open .sc-arrow { transform: rotate(90deg); }
 .sc-body > * { padding: 0 18px; }
 .sc-body > :last-child { padding-bottom: 16px; }
 .trigger-label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.sc-logic {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.logic-row {
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+}
+.logic-row.invalidation {
+  background: #fff5f3;
+  border-color: #f2c8c2;
+}
+.logic-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.logic-text,
+.logic-row ul {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+.logic-row ul {
+  margin: 0;
+  padding-left: 18px;
+}
 
 function toggleScenario(el) { el.classList.toggle('open'); }
 ```
@@ -951,6 +1114,7 @@ formatter: function(params) {
   <span class="insight-label">深度解读</span>
   <p>[module1.analysis_text.event_interpretation 内容]</p>
   <p>[module1.analysis_text.macro_judgment 内容]</p>
+  <p><strong>主叙事：</strong>[module1.analysis_text.pricing_core 内容]</p>
 </div>
 
 <!-- Module 2 叙述区块 -->
@@ -986,12 +1150,12 @@ formatter: function(params) {
 
 | 模块 | 叙述区块位置 |
 |------|-----------|
-| M1 宏观定价 | 事件表之后，宏观坐标雷达图之前 |
+| M1 宏观定价 | 预期差主叙事卡之后，事件表与宏观坐标之间 |
 | M2 情绪温度计 | 情绪仪表盘之后，5日趋势折线之前 |
 | M3 板块分析 | 行业条形图之后，TOP2解剖表之前 |
 | M4 资金路线图 | 资金结构柱图之后，桑基图之前 |
 | M5 技术+估值 | K线图之后，估值百分位轨道之前 |
-| M6 情景预判 | 三情景概率条之前（每个情景卡展开时显示 rationale） |
+| M6 情景预判 | 三情景概率条之后、情景卡之前；每张情景卡展开时同时显示 rationale、validates、invalidation |
 
 ### TOP2板块解剖卡新增字段
 
