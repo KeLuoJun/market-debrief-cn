@@ -43,12 +43,12 @@ Phase 3: 渲染 Agent 整合输出 HTML
 python scripts/fetch_market_data.py --date YYYYMMDD
 ```
 
-脚本自动拉取 11 类数据（详见 `references/akshare-api.md`）：
+脚本自动拉取 12 类数据（详见 `references/akshare-api.md`）：
 
 - 指数日线（6大指数近一年）、指数PE估值、全A PB
 - 全市场资金流向（超大/大/中/小单）、行业资金流向
 - 涨停池/跌停池/炸板池/强势连板股
-- 北向资金、两融余额、国债收益率、龙虎榜
+- 北向资金、两融余额、国债收益率、龙虎榜机构/个股统计、市场广度摘要（上涨/下跌家数）
 
 脚本**自动写入** `SKILL_ROOT/assets/market_data_YYYY-MM-DD.json`（目录不存在时自动创建）。
 
@@ -56,7 +56,7 @@ python scripts/fetch_market_data.py --date YYYYMMDD
 
 ### Step 3: 搜索新闻事件
 
-使用 Tavily 搜索当日关键事件，自动执行 4 组查询，覆盖：A股政策新闻、板块热点、隔夜外盘、宏观经济数据。
+使用 Tavily 搜索当日关键事件，自动执行 7 组查询（政策、板块、外盘、宏观、机构观点、北向资金、突发事件）。
 
 **Windows（推荐，跨平台）**：
 
@@ -70,7 +70,11 @@ python scripts/search_news.py --date YYYY-MM-DD
 bash scripts/search_news.sh '{"date": "YYYY-MM-DD"}'
 ```
 
-两个脚本输出格式完全相同，**自动写入** `SKILL_ROOT/assets/news_data_YYYY-MM-DD.json`，失败的查询记录在 `_failed_queries` 字段。
+两个脚本输出格式完全相同，**自动写入** `SKILL_ROOT/assets/news_data_YYYY-MM-DD.json`。其中：
+
+- `results`：去噪+去重+按质量排序后的新闻列表（优先用于分析）
+- `query_batches`：各查询原始回包（用于追溯）
+- `_failed_queries`：失败查询数量
 
 ⚠️ 需要 Tavily API token。优先级：`TAVILY_API_KEY` 环境变量（支持 `tvly-...` 格式）→ `~/.mcp-auth/` JWT 缓存。若两者均不可用，脚本会报错退出——必须先解决认证问题再继续（见 Step 4 双源要求）。
 
@@ -143,7 +147,7 @@ python scripts/analyze_market.py --date YYYYMMDD
 
 **模块**: Module 3（板块结构性分析）+ Module 4（资金路线图）
 
-**提供数据**: `analysis.industry`（四分类表、成长/价值风格、资金流向TOP/BOTTOM3、迁移类型）、`analysis.limit_up_ecology`（封板率、连板分布、主题集中度、赚钱效应）、`analysis.fund_structure`（机构/散户行为类型、超大单趋势）、龙虎榜
+**提供数据**: `analysis.industry`（四分类表、成长/价值风格、资金流向TOP/BOTTOM3、迁移类型）、`analysis.limit_up_ecology`（封板率、连板分布、主题集中度、赚钱效应）、`analysis.fund_structure`（机构/散户行为类型、超大单趋势）、`market_data.lhb_jgmmtj`、`market_data.lhb_stocks`
 
 **核心任务**:
 
@@ -151,11 +155,9 @@ python scripts/analyze_market.py --date YYYYMMDD
 - **直接使用** `analysis.industry.style` 输出成长/价值量化对比
 - TOP 2 板块深度解剖（驱动力/轮动周期/资金主体/持续性评级）
 - **直接使用** `analysis.limit_up_ecology` 涨停板生态指标
-- 基于 `analysis.fund_structure.behavior_type` + 龙虎榜席位解读资金意图
+- 基于 `analysis.fund_structure.behavior_type` + `market_data.lhb_jgmmtj/lhb_stocks` 解读资金意图
 
 **输出**: JSON（结构见 analysis-framework.md「Subagent B」节）
-
-- 龙虎榜席位解读
 
 **输出**: JSON（结构见 analysis-framework.md「Subagent B」节）
 
@@ -185,17 +187,27 @@ python scripts/analyze_market.py --date YYYYMMDD
 
 ### 深度分析指令（最高优先级）
 
-**1. 必须建立因果链条**
+**1. 交叉证伪机制（Cross-Validation）**
+禁止简单复读新闻中的利好与利空。必须执行新闻事件与盘面数据的交叉对比：
+
+- 若**新闻大肆渲染某热点**（如“某板块重磅利好”），必须立即去查阅 `market_data.lhb_jgmmtj`（龙虎榜机构买卖）或 `analysis.industry.fund_flow_top3_outflow`：
+  - 如果机构/主力在**高位净卖出**（新闻火热但资金撤退），强烈提示**【风险提示：情绪高潮但主力资金背离 / 借利好兑现】**。
+  - 如果新闻利好与龙虎榜机构净买入**共振**，判定为**【主线确认】**。
+
+**2. 必须建立因果链条**
 禁止仅罗列“指数涨跌”或“新闻标题”。所有结论必须符合 `数据(Data) + 事件(Event) -> 归因(Attribution) -> 验证(Verification)` 的结构。
-*   ❌ 错误：今日半导体板块上涨，主力流入。
-*   ✅ 正确：半导体板块上涨3.2%，主力净流入15亿（数据），主要受昨夜英伟达财报超预期驱动（事件），确认了AI硬件端的景气度外溢（归因），需关注明日是否缩量分歧（验证）。
 
-**2. 必须使用量化锚点**
-*   **情绪**：必须引用 `composite_score` 和 `divergence`（散户/机构分歧）。
-*   **资金**：必须引用 `northbound`（北向）与 `sector_fund_flow`（内资）的背离或共振。
-*   **主力**：必须引用 `lhb_jgmmtj`（机构席位）分析“聪明钱”动向。
+- ❌ 错误：今日半导体板块上涨，主力流入。
+- ✅ 正确：半导体板块上涨3.2%，主力净流入15亿（数据），主要受昨夜英伟达财报超预期驱动（事件），确认了AI硬件端的景气度外溢（归因），需关注明日是否缩量分歧（验证）。
 
-**3. 数据失败处理**
+**3. 必须使用量化锚点与速率(Velocity)**
+
+- **情绪与加速度**：必须引用 `composite_score`、`divergence`（散户/机构分歧）以及 `momentum_velocity`（加速度）。
+- **量价配合**：必须引用 `analysis.technical` 中的 `volume_price_desc` 判断量价关系（如缩量下跌、放量滞涨等）。
+- **资金**：必须引用 `northbound`（北向）与 `sector_fund_flow`（内资）的背离或共振，且留意机构/散户流向。
+- **预期管理**：梳理未来3天的宏观数据或财报发布窗口，给出具体落地验证点。
+
+**4. 数据失败处理**
 若 `market_data` 中存在 `_failed_items`，必须在报告开头显著位置（引用块）提示：“⚠️ 部分数据源（如龙虎榜）暂时不可用，相关模块分析可能受限”。
 
 HTML 设计规范详见 → `references/html-design-spec.md`
@@ -217,8 +229,9 @@ HTML 设计规范详见 → `references/html-design-spec.md`
 13. **响应式强制要求**：桌面端按 2-3 列信息栅格布局；当视口 < 900px 时统一降为单列，顶部指数卡改为 2 列网格，禁止 6 个指数横向挤压在一行。
 14. **视觉层次强制要求**：每个模块必须遵循「标题区 → 一句话结论 → 核心图表区 → 深度解读 → 次级表格/清单」的顺序，禁止把图表、长段落、表格随机穿插。
 15. **优先美观而非堆砌**：宁可减少一个次级组件，也要保证主图表和关键数字排版整齐、留白充足、模块高度均衡。
-16. **必须显式渲染“市场在交易什么”**：在顶部摘要区或 Module 1 中，固定展示 `module1.expectation_gap` 的主叙事摘要。
-17. **必须显式渲染“明日验证点”**：在 Module 6 的情景区中展示每个情景的 `validates` 与 `invalidation`，禁止只渲染概率和区间。
+16. **图表必须自带解释与交互（深度优化要求）**：所有的单独 `.chart-frame` 顶部必须带有醒目的文字标签（HTML 标题或说明段落），告知用户正在看什么指标（如：`<div class="chart-title">主力30日净流入趋势</div>`）；严禁生成没有任何文字说明“裸图表”；对于时序折线/柱状图必须强制开启 `dataZoom` 以供拖拽缩放；必须配置带有单位（% 或 亿元）的 `tooltip { trigger: 'axis' }` 和 `legend`。
+17. **必须显式渲染“市场在交易什么”**：在顶部摘要区或 Module 1 中，固定展示 `module1.expectation_gap` 的主叙事摘要。
+18. **必须显式渲染“明日验证点”**：在 Module 6 的情景区中展示每个情景的 `validates` 与 `invalidation`，禁止只渲染概率和区间。
 
 ### 页面结构
 
@@ -315,12 +328,12 @@ market-debrief-YYYY-MM-DD.html
 
 生成报告完毕后，在最终回复中**必须以中文明确告知用户**：
 
-1. **若所有数据均采集成功**：说明「本期数据采集完整，所有 11 类行情数据和新闻查询均成功」
+1. **若所有数据均采集成功**：说明「本期数据采集完整，所有 12 类行情数据和新闻查询均成功」
 2. **若存在失败项**：列出具体失败内容，例如：
 
    > ⚠️ 本期数据采集部分失败，以下内容未能获取，相关模块分析准确度可能受影响：
    >
-   > - **行情数据**：龙虎榜（lhb）、指数PE（index pe）
+   > - **行情数据**：龙虎榜机构统计（lhb_jgmmtj）或龙虎榜个股统计（lhb_stocks）、指数PE（index pe）
    > - **新闻查询**：2/4 个查询无有效返回
 
 **来源**：读取 `SKILL_ROOT/assets/market_data_YYYY-MM-DD.json` 中的 `_failed_items` 字段，以及 `SKILL_ROOT/assets/news_data_YYYY-MM-DD.json` 中的 `_failed_queries` 字段。

@@ -410,7 +410,7 @@ ERP = 沪深300股息率 - 10年期国债收益率
 **负责模块**: Module 1 + Module 2
 
 **接收数据**:
-- `analysis.sentiment`：情绪综合分、散户分、机构分、各分项得分、divergence_type、60日成交额百分位
+- `analysis.sentiment`：情绪综合分、散户分、机构分、各分项得分、divergence_type、60日成交额百分位、`momentum_velocity`（资金加速度）
 - `analysis.northbound`：当日净额（亿）、趋势描述、20日序列
 - `market_data`（原始）：涨跌停原始数量、两融余额序列、tavily 新闻
 
@@ -477,7 +477,8 @@ ERP = 沪深300股息率 - 10年期国债收益率
 - `analysis.industry`：heatmap（四分类）、style（成长/价值均涨幅差）、fund_flow_top3_inflow/outflow、migration_type
 - `analysis.limit_up_ecology`：zt_count、seal_rate_pct、consecutive_distribution、profit_effect、theme_concentration
 - `analysis.fund_structure`：behavior_type、super_large_net_yi、institutional_direction、retail_direction
-- `market_data.lhb`（原始）：龙虎榜席位原始数据
+- `market_data.lhb_jgmmtj`（原始）：龙虎榜机构席位统计
+- `market_data.lhb_stocks`（原始）：龙虎榜个股上榜统计
 
 **Subagent B 使用规则**：
 - `industry_heatmap` 直接从 `analysis.industry.heatmap` 读取，无需重分类
@@ -535,7 +536,7 @@ ERP = 沪深300股息率 - 10年期国债收益率
 **负责模块**: Module 5 + Module 6
 
 **接收数据**:
-- `analysis.technical`：各指数 MA 值/偏离度、均线排列、量比、K线形态（name/probability_hint/explanation）、支撑/压力位列表（含 type/level/distance_pct）、overnight_chg_pct/intraday_chg_pct
+- `analysis.technical`：各指数 MA 值/偏离度、均线排列、量比、`volume_price_desc`（量价配合度）、K线形态（name/probability_hint/explanation）、支撑/压力位列表（含 type/level/distance_pct）、overnight_chg_pct/intraday_chg_pct
 - `analysis.valuation`：index_pe（各指数 current_pe/pe_percentile_60d/pe_zone）、all_a_pb、erp（erp_pct/erp_signal/bond_yield_10y_pct）
 - `market_data.index_daily`（原始）：近250日日线序列，用于 ECharts K线图渲染
 

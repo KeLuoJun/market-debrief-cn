@@ -11,10 +11,12 @@ import argparse
 import base64
 import json
 import os
+import re
 import sys
 import time
 from datetime import date
 from pathlib import Path
+from urllib.parse import urlparse
 
 try:
     import requests
@@ -25,6 +27,34 @@ except ImportError:
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 ASSETS_DIR = SKILL_ROOT / "assets"
+
+TRUSTED_DOMAINS = {
+    "stcn.com",
+    "eastmoney.com",
+    "finance.sina.com.cn",
+    "cls.cn",
+    "cnstock.com",
+    "cs.com.cn",
+    "yicai.com",
+    "caixin.com",
+    "wallstreetcn.com",
+    "news.futunn.com",
+    "21jingji.com",
+}
+
+NOISE_KEYWORDS = {
+    "小时报",
+    "财富号",
+    "免责声明",
+    "AI大模型",
+    "扫码",
+    "会员",
+    "广告",
+    "登录",
+    "注册链接",
+    "APP专享",
+    "责任编辑",
+}
 
 
 # ── Token 管理 ────────────────────────────────────────────────
@@ -148,6 +178,82 @@ def _search_mcp(api_key: str, query: str) -> dict:
         return {}
 
 
+def _domain_from_url(url: str) -> str:
+    try:
+        host = urlparse(url).netloc.lower().strip()
+        if host.startswith("www."):
+            host = host[4:]
+        return host
+    except Exception:
+        return ""
+
+
+def _clean_text(text: str) -> str:
+    if not text:
+        return ""
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:800]
+
+
+def _is_low_quality(title: str, content: str, domain: str) -> bool:
+    blob = f"{title} {content}"
+    if not title or not content:
+        return True
+    if len(content) < 80:
+        return True
+    if any(k.lower() in blob.lower() for k in NOISE_KEYWORDS):
+        return True
+    # 过滤明显无关或乱码域名
+    if not domain or len(domain) < 4:
+        return True
+    return False
+
+
+def _normalize_batch(query: str, batch: dict) -> list:
+    items = batch.get("results", []) if isinstance(batch, dict) else []
+    normalized = []
+    for item in items:
+        url = str(item.get("url", "")).strip()
+        title = _clean_text(str(item.get("title", "")))
+        content = _clean_text(str(item.get("content", "")))
+        score = float(item.get("score", 0) or 0)
+        domain = _domain_from_url(url)
+
+        if _is_low_quality(title, content, domain):
+            continue
+
+        trust_bonus = 0.15 if domain in TRUSTED_DOMAINS else 0.0
+        quality_score = round(min(score + trust_bonus, 1.0), 4)
+
+        normalized.append({
+            "query": query,
+            "url": url,
+            "domain": domain,
+            "title": title,
+            "content": content,
+            "score": round(score, 4),
+            "quality_score": quality_score,
+            "trusted_source": domain in TRUSTED_DOMAINS,
+        })
+    return normalized
+
+
+def _dedupe_and_rank(items: list, top_n: int = 40) -> list:
+    dedup = {}
+    for item in items:
+        key = item.get("url") or f"{item.get('domain')}|{item.get('title')}"
+        if key not in dedup or item.get("quality_score", 0) > dedup[key].get("quality_score", 0):
+            dedup[key] = item
+
+    ranked = sorted(
+        dedup.values(),
+        key=lambda x: (x.get("trusted_source", False),
+                       x.get("quality_score", 0)),
+        reverse=True,
+    )
+    return ranked[:top_n]
+
+
 # ── 主程序 ────────────────────────────────────────────────────
 
 
@@ -186,7 +292,8 @@ def main():
         f"{target_date} A股 突发 利好 利空 消息",
     ]
 
-    all_results = []
+    query_batches = []
+    curated_items = []
     failed_queries = 0
 
     for query in queries:
@@ -194,16 +301,26 @@ def main():
         result = _search_rest(
             api_key, query) if key_type == "rest" else _search_mcp(api_key, query)
         if result:
-            all_results.append(result)
+            query_batches.append({"query": query, "raw": result})
+            curated_items.extend(_normalize_batch(query, result))
         else:
             failed_queries += 1
             print(f"[WARN] 查询无有效结果: {query}", file=sys.stderr)
 
+    curated_results = _dedupe_and_rank(curated_items, top_n=40)
+    trusted_count = sum(1 for x in curated_results if x.get("trusted_source"))
+
     output = {
         "target_date": target_date,
-        "search_count": len(all_results),
+        "search_count": len(query_batches),
         "_failed_queries": failed_queries,
-        "results": all_results,
+        "results": curated_results,
+        "query_batches": query_batches,
+        "quality_summary": {
+            "curated_count": len(curated_results),
+            "trusted_count": trusted_count,
+            "trusted_ratio": round(trusted_count / len(curated_results), 4) if curated_results else 0.0,
+        },
     }
 
     Path(output_file).parent.mkdir(parents=True, exist_ok=True)

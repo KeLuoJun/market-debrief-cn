@@ -28,6 +28,7 @@
 - **深度优先**：每个模块至少含1个交互式图表，交互服务于「探索深层含义」而非装饰
 - **结论前置**：每模块标题即核心结论，正文从「为什么」开始
 - **量化到底**：所有判断必须附数字锚点，禁止使用无数字的形容词
+- **看图即懂**：**必须生成完整的业务解释说明。绝对禁止挂出图表/徽章而没有对应的图例、文字描述或动态 tooltip 说明。图下方的`.insight-summary`是必须项。**
 - **留白即呼吸**：模块间距充足，文字行高宽松，卡片投影轻盈
 
 ## 工程化布局约束
@@ -453,9 +454,11 @@ const C = {
   FONT: 'Georgia, "PingFang SC", "Microsoft YaHei", sans-serif'
 };
 // 通用grid
-function grd(l=56,r=16,t=44,b=32) { return {left:l,right:r,top:t,bottom:b,containLabel:true}; }
-// 通用tooltip
+function grd(l=56,r=16,t=60,b=50) { return {left:l,right:r,top:t,bottom:b,containLabel:true}; }
+// 通用tooltip (带明确的业务单位和说明格式)
 function tip(fmt) { return {trigger:'axis',backgroundColor:C.TOOLTIP_BG,borderColor:'transparent',textStyle:{color:'#FAF7F2',fontSize:12},formatter:fmt}; }
+// 通用DataZoom (必须启用，否则无法满足深度交互)
+function zoom() { return [{type: 'inside', start: 0, end: 100}, {type: 'slider', start: 0, end: 100, height: 20, bottom: 5}]; }
 ```
 
 **容器尺寸**：
@@ -997,8 +1000,9 @@ function toggleScenario(el) { el.classList.toggle('open'); }
 |---------|------|--------|
 | Accordion 折叠 | 情景卡片、详细触发条件 | JS class toggle |
 | Tab 切换 | 不同指数切换（K线图） | JS hidden/visible |
-| Tooltip 悬停 | 图表数据详情 | ECharts built-in |
-| 滑块拖拽 | 成交量/时间区间 | ECharts dataZoom |
+| DataZoom 缩放（强制）| 成交量/时间区间 | ECharts dataZoom |
+| 业务解释提示框（强制）| 图表数据详情，带明确业务说明（上涨/流出代表什么），带有明确单位（%或亿元） | ECharts built-in tooltip |
+| 图例 Legend（强制） | 区分重叠的多条时间序列/柱状图含义 | ECharts legend |
 | Badge 点击过滤 | 行业分类筛选 | JS filter + class |
 | 进度指示 | 概率条、PE百分位 | CSS transition |
 

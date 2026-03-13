@@ -94,6 +94,35 @@ def linear_score(value: float, lo: float, hi: float,
     return float(np.clip(score_lo + ratio * (score_hi - score_lo), score_lo, score_hi))
 
 
+def parse_cn_number(value):
+    """解析包含中文单位的数值字符串（亿/万/千）为绝对数值。"""
+    if value is None:
+        return np.nan
+    if isinstance(value, (int, float, np.number)):
+        return float(value)
+    s = str(value).strip().replace(",", "")
+    if not s:
+        return np.nan
+
+    multiplier = 1.0
+    if s.endswith("亿"):
+        multiplier = 1e8
+        s = s[:-1]
+    elif s.endswith("万"):
+        multiplier = 1e4
+        s = s[:-1]
+    elif s.endswith("千"):
+        multiplier = 1e3
+        s = s[:-1]
+    elif s.endswith("%"):
+        s = s[:-1]
+
+    try:
+        return float(s) * multiplier
+    except ValueError:
+        return np.nan
+
+
 # ── 1. 情绪评分系统 ───────────────────────────────────────────
 
 def calc_sentiment(data: dict) -> dict:
@@ -103,11 +132,19 @@ def calc_sentiment(data: dict) -> dict:
     """
     result = {}
 
-    # -- 成交额 vs 20日均值 (权重 20%)
+    # -- 成交额/量 vs 20日均值 (权重 20%)
     mff = to_df(data.get("market_fund_flow", []))
     vol_score = 50.0
+    turnover = None
+
     if not mff.empty and "成交额" in mff.columns:
         turnover = mff["成交额"].astype(float)
+    else:
+        sz_daily = to_df(data.get("index_daily", {}).get("上证指数", []))
+        if not sz_daily.empty and "volume" in sz_daily.columns:
+            turnover = sz_daily["volume"].astype(float)
+
+    if turnover is not None and not turnover.empty:
         latest_turn = turnover.iloc[-1]
         ma20_turn = turnover.tail(
             21).iloc[:-1].mean() if len(turnover) > 20 else turnover.mean()
@@ -174,18 +211,25 @@ def calc_sentiment(data: dict) -> dict:
             super_net = float(sv.iloc[-1])
             super_score = linear_score(super_net / 1e8, -100, 100, 30, 70)
 
-    # -- 换手率 vs 20日均值（权重 10%）
-    turn_score = vol_score  # 用成交额ratio近似（数据无独立换手率字段时）
+    # -- 市场广度（上涨家数占比，权重 15%）
+    breadth_score = 50.0
+    breadth_up_ratio = None
+    breadth = data.get("market_breadth", {})
+    if isinstance(breadth, dict):
+        up_ratio = breadth.get("up_ratio")
+        if up_ratio is not None:
+            breadth_up_ratio = float(up_ratio)
+            breadth_score = linear_score(breadth_up_ratio, 0.30, 0.70)
 
     # -- 综合加权
     composite = (
         vol_score * 0.20
         + zt_dt_score * 0.15
         + seal_score * 0.15
-        + margin_score * 0.15
+        + margin_score * 0.10
         + nb_score * 0.15
-        + turn_score * 0.10
         + super_score * 0.10
+        + breadth_score * 0.15
     )
     composite = round(composite, 1)
 
@@ -208,6 +252,7 @@ def calc_sentiment(data: dict) -> dict:
             "margin_change": round(margin_score, 1),
             "northbound": round(nb_score, 1),
             "super_large_flow": round(super_score, 1),
+            "market_breadth": round(breadth_score, 1),
         },
         "raw_values": {
             "zt_count": zt_count,
@@ -218,19 +263,21 @@ def calc_sentiment(data: dict) -> dict:
             "margin_daily_change_yi": round(margin_daily_change / 1e8, 2),
             "northbound_net_today_yi": round(nb_net_today / 1e8, 2),
             "super_large_net_yi": round(super_net / 1e8, 2),
+            "breadth_up_ratio": round(breadth_up_ratio, 4) if breadth_up_ratio is not None else None,
+            "breadth_down_ratio": breadth.get("down_ratio") if isinstance(breadth, dict) else None,
         },
     })
     return result
 
 
 def _classify_divergence(retail: float, inst: float) -> str:
-    if retail > 60 and inst > 60:
+    if retail >= 60 and inst >= 60:
         return "共识多头"
-    if retail < 40 and inst < 40:
+    if retail <= 40 and inst <= 40:
         return "共识空头"
-    if retail > 60 and inst < 40:
+    if retail >= 60 and inst <= 40:
         return "散户热机构冷"
-    if retail < 40 and inst > 60:
+    if retail <= 40 and inst >= 60:
         return "散户冷机构热"
     return "情绪中性"
 
@@ -280,12 +327,31 @@ def calc_technical(data: dict) -> dict:
         # 均线排列判断
         arrangement = _judge_ma_arrangement(latest_close, ma)
 
-        # 量比（今日成交量 / 5日平均成交量）
+        # 量比（今日成交量 / 5日平均成交量）及量价配合度（速度与加速度）
         vol_ratio = 1.0
+        volume_price_desc = "数据不足"
         if len(volume) >= 6:
             avg5 = float(volume.tail(6).iloc[:-1].mean())
             vol_ratio = round(
                 float(volume.iloc[-1]) / avg5, 2) if avg5 > 0 else 1.0
+
+        # 预先计算总涨跌幅用于量价配合度判断
+        total_chg = round((latest_close - prev_close) / prev_close * 100, 2)
+
+        if vol_ratio > 1.2 and total_chg > 0.5:
+            volume_price_desc = "放量上涨 (多头确认/入场)"
+        elif vol_ratio > 1.2 and total_chg < -0.5:
+            volume_price_desc = "放量下跌 (恐慌/抛压沉重)"
+        elif vol_ratio < 0.8 and total_chg > 0.5:
+            volume_price_desc = "缩量上涨 (跟风不足/抛压轻)"
+        elif vol_ratio < 0.8 and total_chg < -0.5:
+            volume_price_desc = "缩量下跌 (抛压衰竭/情绪低迷)"
+        elif vol_ratio >= 1.5 and abs(total_chg) <= 0.5:
+            volume_price_desc = "放量滞涨 (资金现强分歧)"
+        elif vol_ratio <= 0.8 and abs(total_chg) <= 0.5:
+            volume_price_desc = "地量震荡 (变盘前兆)"
+        else:
+            volume_price_desc = "量价平稳"
 
         # K线形态识别
         kline_pattern = _identify_kline_pattern(
@@ -297,7 +363,6 @@ def calc_technical(data: dict) -> dict:
         overnight_chg = round((latest_open - prev_close) / prev_close * 100, 2)
         intraday_chg = round(
             (latest_close - latest_open) / latest_open * 100, 2)
-        total_chg = round((latest_close - prev_close) / prev_close * 100, 2)
 
         # 支撑/压力位
         supports, resistances = _calc_key_levels(
@@ -315,6 +380,7 @@ def calc_technical(data: dict) -> dict:
             "ma_deviations": deviation,
             "ma_arrangement": arrangement,
             "volume_ratio": vol_ratio,
+            "volume_price_desc": volume_price_desc,
             "kline_pattern": kline_pattern,
             "supports": supports,
             "resistances": resistances,
@@ -580,9 +646,11 @@ def calc_industry(data: dict) -> dict:
     """
     # 优先使用 sector_fund_flow (含涨跌幅和资金流)，不再依赖 industry_board
     board = to_df(data.get("sector_fund_flow", []))
+    sector_flow = board.copy()
     # 为兼容旧代码，保留 data.get("industry_board", []) 读取，但 fetch_market_data.py 已移除该字段
     if board.empty:
         board = to_df(data.get("industry_board", []))
+        sector_flow = board.copy()
 
     result = {}
     if board.empty:
@@ -593,7 +661,7 @@ def calc_industry(data: dict) -> dict:
     chg_col = next((c for c in board.columns if "涨跌幅" in c), None)
     name_col = next(
         (c for c in board.columns if "板块" in c or "行业" in c or "名称" in c), None)
-    
+
     if not chg_col or not name_col:
         return result
 
@@ -675,8 +743,7 @@ def calc_industry(data: dict) -> dict:
         sf_name_col = next(
             (c for c in sector_flow.columns if "板块" in c or "行业" in c or "名称" in c), None)
         if net_col and sf_name_col:
-            sector_flow[net_col] = pd.to_numeric(
-                sector_flow[net_col], errors="coerce")
+            sector_flow[net_col] = sector_flow[net_col].apply(parse_cn_number)
             sector_flow = sector_flow.dropna(subset=[net_col])
             top3_in = sector_flow.nlargest(
                 3, net_col)[[sf_name_col, net_col]].to_dict("records")
@@ -936,27 +1003,52 @@ def calc_northbound(data: dict) -> dict:
 
 def calc_sentiment_history_context(sentiment_today: dict, data: dict) -> dict:
     """
-    基于历史成交额序列估算今日情绪分在近60日中的百分位。
-    （注：完整历史情绪分需要历史数据库，此处用成交额百分位近似）
+    基于历史成交额序列估算今日情绪分在近60日中的百分位，
+    并增加【趋势与加速度】(Velocity/Acceleration) 维度判断。
+    （注：完整历史情绪分需要历史数据库，此处用成交额及变动率近似）
     """
+    # 增加资金加速度判断 (最近3日平均成交额 vs 前期3日平均成交额)
+    # 如果 market_fund_flow 中没有成交额，则尝试用 上证指数 的成交量
+    series = None
     mff = to_df(data.get("market_fund_flow", []))
-    if mff.empty:
-        return {}
+    if not mff.empty:
+        turn_col = next((c for c in mff.columns if "成交额" in c), None)
+        if turn_col:
+            series = pd.to_numeric(mff[turn_col], errors="coerce").dropna()
 
-    turn_col = next((c for c in mff.columns if "成交额" in c), None)
-    if not turn_col:
-        return {}
+    if series is None or len(series) < 10:
+        # Fallback 到上证指数的 volume
+        sz_daily = to_df(data.get("index_daily", {}).get("上证指数", []))
+        if not sz_daily.empty and "volume" in sz_daily.columns:
+            series = pd.to_numeric(
+                sz_daily["volume"], errors="coerce").dropna()
 
-    series = pd.to_numeric(mff[turn_col], errors="coerce").dropna()
-    if len(series) < 10:
+    if series is None or len(series) < 10:
         return {}
 
     latest_val = float(series.iloc[-1])
     pct = round(percentile_rank(series.iloc[:-1], latest_val) * 100, 1)
 
+    momentum_desc = "数据不足"
+    if len(series) >= 6:
+        last_3_avg = series.iloc[-3:].mean()
+        prev_3_avg = series.iloc[-6:-3].mean()
+        dod_change = (last_3_avg - prev_3_avg) / \
+            prev_3_avg * 100 if prev_3_avg > 0 else 0
+
+        if dod_change > 10:
+            momentum_desc = f"进场加速 (近3日均量环比增加 {dod_change:.1f}%)"
+        elif dod_change < -10:
+            momentum_desc = f"抛压衰减/情绪退潮 (近3日均量环比萎缩 {abs(dod_change):.1f}%)"
+        elif dod_change > 0:
+            momentum_desc = f"温和放量 (变化率 {dod_change:.1f}%)"
+        else:
+            momentum_desc = f"略微缩量 (变化率 {dod_change:.1f}%)"
+
     return {
         "turnover_percentile_60d": pct,
-        "approximate_note": "以成交额历史百分位近似代表情绪分历史百分位，供参考",
+        "momentum_velocity": momentum_desc,
+        "approximate_note": "以成交额历史百分位及3日环比变动近似代表情绪斜率",
     }
 
 

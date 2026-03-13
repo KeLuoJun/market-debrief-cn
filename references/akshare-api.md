@@ -12,7 +12,7 @@
 3. [全A PB - stock_a_all_pb](#3-全a-pb)
 4. [全市场资金流向 - stock_market_fund_flow](#4-全市场资金流向)
 5. [行业资金流向 - stock_sector_fund_flow_rank](#5-行业资金流向)
-6. [行业板块行情 - stock_board_industry_name_em](#6-行业板块行情)
+6. [市场广度 - stock_zh_a_spot_em](#6-市场广度)
 7. [涨停池 - stock_zt_pool_em](#7-涨停池)
 8. [跌停池 - stock_zt_pool_dtgc_em](#8-跌停池)
 9. [炸板池 - stock_zt_pool_zbgc_em](#9-炸板池)
@@ -20,7 +20,8 @@
 11. [北向资金 - stock_hsgt_hist_em](#11-北向资金)
 12. [两融余额 - stock_margin_account_info](#12-两融余额)
 13. [国债收益率 - bond_china_yield](#13-国债收益率)
-14. [龙虎榜 - stock_lhb_detail_em](#14-龙虎榜)
+14. [龙虎榜机构席位统计 - stock_lhb_jgmmtj_em](#14-龙虎榜机构席位统计)
+15. [龙虎榜个股上榜统计 - stock_lhb_stock_statistic_em](#15-龙虎榜个股上榜统计)
 
 ---
 
@@ -95,13 +96,15 @@ ak.stock_sector_fund_flow_rank(indicator="今日", sector_type="行业资金流"
 
 ---
 
-## 6. 行业板块行情
+## 6. 市场广度
 
 ```python
-ak.stock_board_industry_name_em()
+ak.stock_zh_a_spot_em()
 ```
 
-**返回字段**：`排名, 板块名称, 板块代码, 最新价, 涨跌额, 涨跌幅, 总市值, 换手率, 上涨家数, 下跌家数, 领涨股票, 领涨股票-涨跌幅`
+**用途**：由脚本聚合生成 `market_breadth`（上涨/下跌/平盘家数、占比、涨跌分布、Top movers）。
+
+**常见原始字段**：`代码, 名称, 最新价, 涨跌幅, 成交额`
 
 ---
 
@@ -183,13 +186,25 @@ ak.bond_china_yield(start_date="20260301", end_date="20260311")
 
 ---
 
-## 14. 龙虎榜
+## 14. 龙虎榜机构席位统计
 
 ```python
-ak.stock_lhb_detail_em(start_date="20260311", end_date="20260311")
+ak.stock_lhb_jgmmtj_em(start_date="20260311", end_date="20260311")
 ```
 
-**返回字段**：`序号, 代码, 名称, 上榜日, 解读, 收盘价, 涨跌幅, 龙虎榜净买额, 龙虎榜买入额, 龙虎榜卖出额, 龙虎榜成交额, 市场总成交额, 净买额占总成交比, 成交额占总成交比, 换手率, 流通市值, 上榜原因, 上榜后1日, 上榜后2日, 上榜后5日, 上榜后10日`
+**用途**：对应 `market_data.lhb_jgmmtj`，用于机构席位资金行为分析。
+
+---
+
+## 15. 龙虎榜个股上榜统计
+
+```python
+ak.stock_lhb_stock_statistic_em(date="20260311")
+```
+
+**兼容说明**：不同 AkShare 版本参数签名可能不同，脚本中已实现“带 `date` 参数失败后回退无参调用”。
+
+**用途**：对应 `market_data.lhb_stocks`，用于个股级席位与净买入排序分析。
 
 ---
 

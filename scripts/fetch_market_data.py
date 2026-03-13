@@ -148,6 +148,67 @@ def fetch_sector_fund_flow():
     return df_to_records(df)
 
 
+def fetch_market_breadth():
+    """市场广度摘要（上涨/下跌家数、涨跌分布、极值）"""
+    df = safe_call(ak.stock_zh_a_spot_em)
+    if df is None or df.empty:
+        return {}
+
+    # 常见字段：涨跌幅、代码、名称、最新价、成交额
+    chg_col = next((c for c in df.columns if "涨跌幅" in c), None)
+    code_col = next((c for c in df.columns if "代码" in c), None)
+    name_col = next((c for c in df.columns if "名称" in c), None)
+    amount_col = next((c for c in df.columns if "成交额" in c), None)
+
+    if not chg_col:
+        return {}
+
+    tmp = df.copy()
+    tmp[chg_col] = pd.to_numeric(tmp[chg_col], errors="coerce")
+    tmp = tmp.dropna(subset=[chg_col])
+    if tmp.empty:
+        return {}
+
+    up_count = int((tmp[chg_col] > 0).sum())
+    down_count = int((tmp[chg_col] < 0).sum())
+    flat_count = int((tmp[chg_col] == 0).sum())
+    total = up_count + down_count + flat_count
+
+    summary = {
+        "total_count": total,
+        "up_count": up_count,
+        "down_count": down_count,
+        "flat_count": flat_count,
+        "up_ratio": round(up_count / total, 4) if total else None,
+        "down_ratio": round(down_count / total, 4) if total else None,
+        "median_chg_pct": round(float(tmp[chg_col].median()), 2),
+        "mean_chg_pct": round(float(tmp[chg_col].mean()), 2),
+        "count_gt_3pct": int((tmp[chg_col] >= 3).sum()),
+        "count_lt_minus3pct": int((tmp[chg_col] <= -3).sum()),
+    }
+
+    if code_col and name_col:
+        top_up = tmp.nlargest(10, chg_col)
+        top_down = tmp.nsmallest(10, chg_col)
+
+        def _to_row(row):
+            out = {
+                "code": str(row.get(code_col, "")),
+                "name": str(row.get(name_col, "")),
+                "chg_pct": round(float(row.get(chg_col, 0.0)), 2),
+            }
+            if amount_col:
+                amt_val = pd.to_numeric(row.get(amount_col), errors="coerce")
+                if pd.notna(amt_val):
+                    out["amount_yi"] = round(float(amt_val) / 1e8, 2)
+            return out
+
+        summary["top_up"] = [_to_row(r) for _, r in top_up.iterrows()]
+        summary["top_down"] = [_to_row(r) for _, r in top_down.iterrows()]
+
+    return summary
+
+
 def fetch_lhb_institution(date_str):
     """龙虎榜机构席位统计 (替代 unreliable stock_lhb_detail_em)"""
     # 机构买卖每日统计
@@ -156,7 +217,6 @@ def fetch_lhb_institution(date_str):
     if df is None:
         return []
     return df_to_records(df)
-
 
 
 def fetch_limit_up(date_str):
@@ -224,7 +284,23 @@ def fetch_bond_yield(date_str):
 
 def fetch_lhb_top_stocks(date_str):
     """龙虎榜个股上榜统计 (补充)"""
-    df = safe_call(ak.stock_lhb_stock_statistic_em, date=date_str)
+    # 不同版本 akshare 参数签名存在差异：优先尝试按日期，其次尝试无参。
+    try:
+        df = ak.stock_lhb_stock_statistic_em(date=date_str)
+    except TypeError:
+        try:
+            df = ak.stock_lhb_stock_statistic_em()
+        except Exception as e:
+            _failed_items.append("stock lhb stock statistic em")
+            print(
+                f"[WARN] stock_lhb_stock_statistic_em 调用失败: {e}", file=sys.stderr)
+            return []
+    except Exception as e:
+        _failed_items.append("stock lhb stock statistic em")
+        print(
+            f"[WARN] stock_lhb_stock_statistic_em 调用失败: {e}", file=sys.stderr)
+        return []
+
     if df is None:
         return []
     # 按净买入额排序取前20
@@ -269,6 +345,9 @@ def collect_all(date_str):
     print("[5/11] 拉取行业资金流向(含涨跌幅)...", file=sys.stderr)
     data["sector_fund_flow"] = fetch_sector_fund_flow()
 
+    print("[6/11] 拉取市场广度摘要...", file=sys.stderr)
+    data["market_breadth"] = fetch_market_breadth()
+
     # 移除 data["industry_board"]，改用 sector_fund_flow 替代其功能
 
     print("[7/11] 拉取涨跌停数据...", file=sys.stderr)
@@ -288,9 +367,7 @@ def collect_all(date_str):
 
     print("[11/11] 拉取龙虎榜(机构/个股)...", file=sys.stderr)
     data["lhb_jgmmtj"] = fetch_lhb_institution(date_str)
-    data["lhb_stocks"] = fetch_lhb_top_stocks
-    print("[11/11] 拉取龙虎榜...", file=sys.stderr)
-    data["lhb"] = fetch_lhb(date_str)
+    data["lhb_stocks"] = fetch_lhb_top_stocks(date_str)
 
     data["_failed_items"] = _failed_items.copy()
     if _failed_items:
